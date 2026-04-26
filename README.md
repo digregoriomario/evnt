@@ -18,6 +18,11 @@ In un mondo digitalmente frammentato, Evnt combatte l'isolamento sociale facilit
 ## 🎯 Target
 L'applicazione è rivolta a un target **16+**, con eventi caratterizzati e filtrati in base alla fascia d'età per garantire sempre la massima pertinenza.
 
+## 📂 Risorse
+Consulta la documentazione strategica completa:
+👉 **[Documentazione su Google Drive](https://drive.google.com/drive/folders/1rA5eZXwl1qi7YixnvFl7J1aURynljoFk?usp=drive_link)**
+
+
 ---
 
 ## 🚀 Stato d'avanzamento
