@@ -29,7 +29,7 @@ Consulta la documentazione strategica completa:
 | Modulo | Stato | Progresso | Note |
 | :--- | :---: | :--- | :--- |
 | **Idea progettuale** | ![Done](https://img.shields.io/badge/-done-success) | `100%` | Idea + analisi di mercato |
-| **Requisiti** | ![In Progress](https://img.shields.io/badge/-in--progress-blue) | `20%` |  |
+| **Requisiti** | ![In Progress](https://img.shields.io/badge/-in--progress-blue) | `40%` |  |
 | **Diagrammi UML** | ![Backlog](https://img.shields.io/badge/-backlog-lightgrey) | `0%` |  |
 | **Moduli formativi** | ![Backlog](https://img.shields.io/badge/-backlog-lightgrey) | `0%` | Componenti, API, Docker, Design |
 | **Sviluppo App** | ![Backlog](https://img.shields.io/badge/-backlog-lightgrey) | `0%` |  |
