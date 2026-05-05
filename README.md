@@ -26,14 +26,97 @@ Consulta la documentazione strategica completa:
 ---
 
 ##  Stato d'avanzamento
-| Modulo | Stato | Progresso | Note |
-| :--- | :---: | :--- | :--- |
-| **Idea progettuale** | ![Done](https://img.shields.io/badge/-done-success) | `100%` | Idea + analisi di mercato |
-| **Requisiti** | ![In Progress](https://img.shields.io/badge/-in--progress-blue) | `95%` |  |
-| **Diagrammi UML** | ![In Progress](https://img.shields.io/badge/-in--progress-blue) | `1%` |  |
-| **Moduli formativi** | ![Backlog](https://img.shields.io/badge/-backlog-lightgrey) | `0%` | Componenti, API, Docker, Design |
-| **Sviluppo App** | ![Backlog](https://img.shields.io/badge/-backlog-lightgrey) | `0%` |  |
-
+<table>
+  <thead>
+    <tr>
+      <th align="center">Fase</th>
+      <th align="center">Modulo</th>
+      <th align="center">Stato</th>
+      <th align="center">Progresso</th>
+      <th align="left">Note</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td rowspan="2" valign="middle" align="center" style="background-color:#f6f8fa"><strong>Studio di Fattibilità</strong></td>
+      <td align="center" style="background-color:#f6f8fa">Idea progettuale</td>
+      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-done-success" alt="Done"/></td>
+      <td align="center" style="background-color:#f6f8fa"><code>100%</code></td>
+      <td style="background-color:#f6f8fa"></td>
+    </tr>
+    <tr>
+      <td align="center" style="background-color:#f6f8fa">Analisi di mercato</td>
+      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-done-success" alt="Done"/></td>
+      <td align="center" style="background-color:#f6f8fa"><code>100%</code></td>
+      <td style="background-color:#f6f8fa"></td>
+    </tr>
+    <tr>
+      <td rowspan="2" valign="middle" align="center"><strong>Analisi dei Requisiti</strong></td>
+      <td align="center">Requisiti</td>
+      <td align="center"><img src="https://img.shields.io/badge/-done-success" alt="Done"/></td>
+      <td align="center"><code>100%</code></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td align="center">Casi d'uso</td>
+      <td align="center"><img src="https://img.shields.io/badge/-in--progress-blue" alt="In Progress"/></td>
+      <td align="center"><code>50%</code></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td rowspan="3" valign="middle" align="center" style="background-color:#f6f8fa"><strong>Progettazione</strong></td>
+      <td align="center" style="background-color:#f6f8fa">Schema ER</td>
+      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-in--progress-blue" alt="In Progress"/></td>
+      <td align="center" style="background-color:#f6f8fa"><code>50%</code></td>
+      <td style="background-color:#f6f8fa"></td>
+    </tr>
+    <tr>
+      <td align="center" style="background-color:#f6f8fa">Diagrammi UML</td>
+      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-in--progress-blue" alt="In Progress"/></td>
+      <td align="center" style="background-color:#f6f8fa"><code>50%</code></td>
+      <td style="background-color:#f6f8fa"></td>
+    </tr>
+    <tr>
+      <td align="center" style="background-color:#f6f8fa">Architettura del sistema</td>
+      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-backlog-lightgrey" alt="Backlog"/></td>
+      <td align="center" style="background-color:#f6f8fa"><code>0%</code></td>
+      <td style="background-color:#f6f8fa"></td>
+    </tr>
+    <tr>
+      <td rowspan="2" valign="middle" align="center"><strong>Implementazione</strong></td>
+      <td align="center">Moduli/Componenti</td>
+      <td align="center"><img src="https://img.shields.io/badge/-backlog-lightgrey" alt="Backlog"/></td>
+      <td align="center"><code>0%</code></td>
+      <td>Componenti, API, Docker, Design</td>
+    </tr>
+    <tr>
+      <td align="center">Sviluppo App</td>
+      <td align="center"><img src="https://img.shields.io/badge/-backlog-lightgrey" alt="Backlog"/></td>
+      <td align="center"><code>0%</code></td>
+      <td></td>
+    </tr>
+    <tr>
+      <td rowspan="2" valign="middle" align="center" style="background-color:#f6f8fa"><strong>Testing</strong></td>
+      <td align="center" style="background-color:#f6f8fa">Test funzionali</td>
+      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-backlog-lightgrey" alt="Backlog"/></td>
+      <td align="center" style="background-color:#f6f8fa"><code>0%</code></td>
+      <td style="background-color:#f6f8fa"></td>
+    </tr>
+    <tr>
+      <td align="center" style="background-color:#f6f8fa">Test di accettazione</td>
+      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-backlog-lightgrey" alt="Backlog"/></td>
+      <td align="center" style="background-color:#f6f8fa"><code>0%</code></td>
+      <td style="background-color:#f6f8fa"></td>
+    </tr>
+    <tr>
+      <td rowspan="1" valign="middle" align="center"><strong>Rilascio</strong></td>
+            <td align="center">Distribuzione</td>
+      <td align="center"><img src="https://img.shields.io/badge/-backlog-lightgrey" alt="Backlog"/></td>
+      <td align="center"><code>0%</code></td>
+      <td></td>
+    </tr>
+  </tbody>
+</table>
 
 ## 👥 Team
  - [Mario Di Gregorio](mailto:m.digregorio22@studenti.unisa.it)
