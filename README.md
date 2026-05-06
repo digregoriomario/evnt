@@ -59,8 +59,8 @@ Consulta la documentazione strategica completa:
     </tr>
     <tr>
       <td align="center">Casi d'uso</td>
-      <td align="center"><img src="https://img.shields.io/badge/-in--progress-blue" alt="In Progress"/></td>
-      <td align="center"><code>50%</code></td>
+      <td align="center"><img src="https://img.shields.io/badge/-done-success" alt="Done"/></td>
+      <td align="center"><code>100%</code></td>
       <td></td>
     </tr>
     <tr>
