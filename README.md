@@ -66,14 +66,14 @@ Consulta la documentazione strategica completa:
     <tr>
       <td rowspan="3" valign="middle" align="center" style="background-color:#f6f8fa"><strong>Progettazione</strong></td>
       <td align="center" style="background-color:#f6f8fa">Schema ER</td>
-      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-in--progress-blue" alt="In Progress"/></td>
-      <td align="center" style="background-color:#f6f8fa"><code>50%</code></td>
+      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-done-success" alt="Done"/></td>
+      <td align="center" style="background-color:#f6f8fa"><code>100%</code></td>
       <td style="background-color:#f6f8fa"></td>
     </tr>
     <tr>
       <td align="center" style="background-color:#f6f8fa">Diagrammi UML</td>
-      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-in--progress-blue" alt="In Progress"/></td>
-      <td align="center" style="background-color:#f6f8fa"><code>50%</code></td>
+      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-done-success" alt="Done"/></td>
+      <td align="center" style="background-color:#f6f8fa"><code>100%</code></td>
       <td style="background-color:#f6f8fa"></td>
     </tr>
     <tr>
