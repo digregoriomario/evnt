@@ -1,0 +1,22 @@
+services:
+  db:
+    image: postgis/postgis:16-3.4
+    platform: linux/amd64
+    container_name: evnt-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: evnt
+      POSTGRES_PASSWORD: evnt
+      POSTGRES_DB: evnt
+    ports:
+      - "5433:5432"
+    volumes:
+      - evnt_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U evnt -d evnt"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  evnt_pgdata:

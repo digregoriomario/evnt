@@ -1,0 +1,158 @@
+// Evnt - Prisma schema
+// Mirrors the E-R model (USER, EVENT, CATEGORY, INTEREST, USER_INTEREST,
+// BOOKMARK, PARTICIPATION, CHAT_MESSAGE, NOTIFICATION).
+//
+// PostGIS: the `geom geometry(Point,4326)` column is added by
+// prisma/sql/postgis.sql as a STORED generated column derived from
+// latitude/longitude, plus a GiST spatial index. Prisma keeps the
+// lat/lng floats; geo queries use $queryRaw against `geom`.
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum ChatType {
+  OPEN_GROUP // "gruppo aperto"
+  ANNOUNCEMENTS // "solo annunci"
+}
+
+model User {
+  id        Int      @id @default(autoincrement()) @map("user_id")
+  email     String   @unique @db.VarChar(255)
+  name      String   @db.VarChar(120)
+  bio       String?  @db.Text
+  password  String   @db.VarChar(255)
+  city      String?  @db.VarChar(120)
+  image     String?  @db.VarChar(500)
+  birthday  DateTime @db.Date
+  createdAt DateTime @default(now()) @map("created_at")
+
+  interests     UserInterest[]
+  createdEvents Event[]        @relation("EventCreator")
+  bookmarks     Bookmark[]
+  participations Participation[]
+  messages      ChatMessage[]
+  notifications Notification[]
+
+  @@map("users")
+}
+
+model Interest {
+  id   Int    @id @default(autoincrement()) @map("interest_id")
+  name String @unique @db.VarChar(120)
+
+  users      UserInterest[]
+  categories Category[]
+
+  @@map("interests")
+}
+
+model UserInterest {
+  userId     Int @map("user_id")
+  interestId Int @map("interest_id")
+
+  user     User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  interest Interest @relation(fields: [interestId], references: [id], onDelete: Cascade)
+
+  @@id([userId, interestId])
+  @@map("user_interests")
+}
+
+model Category {
+  id           Int    @id @default(autoincrement()) @map("category_id")
+  name         String @unique @db.VarChar(120)
+  iconCategory String @map("icon_category") @db.VarChar(120)
+  interestId   Int    @map("interest_id")
+
+  interest Interest @relation(fields: [interestId], references: [id])
+  events   Event[]
+
+  @@map("categories")
+}
+
+model Event {
+  id          Int      @id @default(autoincrement()) @map("event_id")
+  creatorId   Int      @map("creator_id")
+  title       String   @db.VarChar(200)
+  description String   @db.Text
+  dateHour    DateTime @map("date_hour")
+  place        String  @db.VarChar(255)
+  // geom geometry(Point,4326) is added by prisma/sql/postgis.sql.
+  latitude    Float
+  longitude   Float
+  price       Decimal  @db.Decimal(10, 2) @default(0)
+  maxSeats    Int?     @map("max_seats")
+  categoryId  Int      @map("category_id")
+  chatType    ChatType @default(OPEN_GROUP) @map("chat_type")
+  isLive      Boolean  @default(false) @map("is_live")
+  image       String?  @db.VarChar(500)
+  tags        String[] @default([])
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  creator       User            @relation("EventCreator", fields: [creatorId], references: [id])
+  category      Category        @relation(fields: [categoryId], references: [id])
+  bookmarks     Bookmark[]
+  participations Participation[]
+  messages      ChatMessage[]
+
+  @@index([categoryId])
+  @@index([creatorId])
+  @@map("events")
+}
+
+model Bookmark {
+  userId  Int      @map("user_id")
+  eventId Int      @map("event_id")
+  savedAt DateTime @default(now()) @map("saved_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@id([userId, eventId])
+  @@map("bookmarks")
+}
+
+model Participation {
+  userId   Int      @map("user_id")
+  eventId  Int      @map("event_id")
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  user  User  @relation(fields: [userId], references: [id], onDelete: Cascade)
+  event Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+
+  @@id([userId, eventId])
+  @@map("participations")
+}
+
+model ChatMessage {
+  id       Int      @id @default(autoincrement()) @map("message_id")
+  eventId  Int      @map("event_id")
+  senderId Int      @map("sender_id")
+  text     String   @db.Text
+  sentAt   DateTime @default(now()) @map("sent_at")
+
+  event  Event @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  sender User  @relation(fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([eventId])
+  @@map("chat_messages")
+}
+
+model Notification {
+  id        Int      @id @default(autoincrement()) @map("notification_id")
+  userId    Int      @map("user_id")
+  title     String   @db.VarChar(200)
+  message   String   @db.Text
+  isRead    Boolean  @default(false) @map("is_read")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("notifications")
+}
