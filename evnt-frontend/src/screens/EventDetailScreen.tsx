@@ -1,7 +1,15 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
-import { categoryColors, categoryEmojis, categorySoftColors } from "../data/events";
+import { EventMiniMap } from "../components/EventMiniMap";
+import { PillButton } from "../components/PillButton";
+import {
+  categoryColors,
+  categoryDefaultImages,
+  categoryEmojis,
+  categorySoftColors,
+  getEventSubcategoryLabel
+} from "../data/events";
 import { colors, radius, shadow, spacing } from "../theme";
 import { EvntEvent } from "../types";
 
@@ -31,18 +39,44 @@ export function EventDetailScreen({
   const seatsLabel = event.capacity
     ? `${event.participants}/${event.capacity}`
     : `${event.participants}+`;
+  const imageUri = event.image || categoryDefaultImages[event.category];
+  const subcategoryLabel = getEventSubcategoryLabel(event);
+  const chatCopy = registered
+    ? "Chat attiva per partecipanti e organizzatore."
+    : "Iscriviti per ritrovare subito questa chat nella sezione Chat.";
+
+  const openExternalMap = () => {
+    const latitude = event.coordinates.latitude;
+    const longitude = event.coordinates.longitude;
+    const label = encodeURIComponent(event.place || event.title);
+    const webUrl = `https://www.google.com/maps/search/?api=1&query=${latitude},${longitude}`;
+    const nativeUrl =
+      Platform.OS === "ios"
+        ? `http://maps.apple.com/?ll=${latitude},${longitude}&q=${label}`
+        : `geo:${latitude},${longitude}?q=${latitude},${longitude}(${label})`;
+
+    void Linking.openURL(Platform.OS === "web" ? webUrl : nativeUrl).catch(() => {
+      void Linking.openURL(webUrl).catch(() => undefined);
+    });
+  };
 
   return (
     <View style={styles.root}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.imageWrap}>
-          <Image source={{ uri: event.image }} style={styles.image} />
+          <Image source={{ uri: imageUri }} style={styles.image} />
           <View style={styles.topActions}>
-            <Pressable accessibilityLabel="Torna indietro" onPress={onBack} style={styles.roundButton}>
+            <Pressable
+              accessibilityLabel="Torna indietro"
+              accessibilityRole="button"
+              onPress={onBack}
+              style={styles.roundButton}
+            >
               <Ionicons color={colors.ink} name="chevron-back" size={24} />
             </Pressable>
             <Pressable
               accessibilityLabel={favorite ? "Rimuovi preferito" : "Aggiungi preferito"}
+              accessibilityRole="button"
               onPress={onToggleFavorite}
               style={styles.roundButton}
             >
@@ -52,9 +86,14 @@ export function EventDetailScreen({
         </View>
 
         <View style={styles.content}>
-          <View style={[styles.categoryBadge, { backgroundColor: soft, borderColor: accent }]}>
-            <Text style={styles.categoryEmoji}>{emoji}</Text>
-            <Text style={[styles.categoryText, { color: accent }]}>{event.category}</Text>
+          <View style={styles.badgeRow}>
+            <PillButton accent={accent} emoji={emoji} label={subcategoryLabel} soft={soft} />
+            {registered ? (
+              <View style={styles.registeredBadge}>
+                <Ionicons color={colors.green} name="checkmark-circle-outline" size={16} />
+                <Text style={styles.registeredBadgeText}>Iscritto</Text>
+              </View>
+            ) : null}
           </View>
           <Text style={styles.title}>{event.title}</Text>
           <Text style={styles.description}>{event.description}</Text>
@@ -69,29 +108,40 @@ export function EventDetailScreen({
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Luogo</Text>
             <View style={styles.addressCard}>
-              <View style={styles.miniMap}>
-                <View style={styles.mapRoad} />
-                <View style={styles.mapPin}>
-                  <Ionicons color={colors.surface} name="location" size={16} />
+              <EventMiniMap event={event} />
+              <View style={styles.addressBottom}>
+                <View style={styles.addressCopy}>
+                  <Text style={styles.addressTitle}>{event.address}</Text>
+                  <Text style={styles.addressMeta}>{event.distanceKm.toFixed(1)} km da te</Text>
                 </View>
+                <Pressable
+                  accessibilityLabel="Apri il luogo in mappe"
+                  accessibilityRole="button"
+                  onPress={openExternalMap}
+                  style={styles.mapButton}
+                >
+                  <Ionicons color={colors.surface} name="navigate-outline" size={18} />
+                  <Text style={styles.mapButtonText}>Apri mappe</Text>
+                </Pressable>
               </View>
-              <View style={styles.addressCopy}>
-                <Text style={styles.addressTitle}>{event.address}</Text>
-                <Text style={styles.addressMeta}>{event.distanceKm.toFixed(1)} km da te</Text>
-              </View>
-              <Ionicons color={colors.teal} name="navigate-outline" size={22} />
             </View>
           </View>
 
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Canale</Text>
-            <Pressable onPress={onOpenInbox} style={styles.channelCard}>
+            <Pressable
+              accessibilityLabel={`Apri chat evento ${event.title}`}
+              accessibilityRole="button"
+              onPress={onOpenInbox}
+              style={styles.channelCard}
+            >
               <View style={styles.channelIcon}>
                 <Ionicons color={colors.teal} name="chatbubbles-outline" size={22} />
               </View>
               <View style={styles.channelCopy}>
                 <Text style={styles.channelTitle}>{event.chatMode}</Text>
-                <Text style={styles.channelText}>Organizzatore: {event.organizer}</Text>
+                <Text style={styles.channelText}>{chatCopy}</Text>
+                <Text style={styles.channelMeta}>Organizzatore: {event.organizer}</Text>
               </View>
               <Ionicons color={colors.muted} name="chevron-forward" size={20} />
             </Pressable>
@@ -99,23 +149,48 @@ export function EventDetailScreen({
 
           <View style={styles.tags}>
             {event.tags.map((tag) => (
-              <View key={tag} style={styles.tag}>
-                <Text style={styles.tagText}>#{tag}</Text>
-              </View>
+              <PillButton accent={colors.teal} key={tag} label={`#${tag}`} soft={colors.tealSoft} />
             ))}
           </View>
         </View>
       </ScrollView>
 
       <View style={styles.ctaBar}>
-        <View>
+        <View style={styles.ctaCopy}>
           <Text style={styles.ctaPrice}>{priceLabel}</Text>
-          <Text style={styles.ctaMeta}>{registered ? "Partecipazione confermata" : "Pagamento simulato"}</Text>
+          <Text style={styles.ctaMeta}>{registered ? "Partecipazione confermata" : seatsLabel}</Text>
         </View>
-        <Pressable onPress={onToggleRegistration} style={[styles.ctaButton, registered && styles.ctaButtonActive]}>
-          <Text style={styles.ctaText}>{registered ? "Annulla" : "Partecipa"}</Text>
-          <Ionicons color={colors.surface} name={registered ? "close" : "checkmark"} size={18} />
-        </Pressable>
+        {registered ? (
+          <View style={styles.ctaActions}>
+            <Pressable
+              accessibilityLabel="Annulla partecipazione"
+              accessibilityRole="button"
+              onPress={onToggleRegistration}
+              style={styles.secondaryCtaButton}
+            >
+              <Text style={styles.secondaryCtaText}>Annulla</Text>
+            </Pressable>
+            <Pressable
+              accessibilityLabel={`Apri chat evento ${event.title}`}
+              accessibilityRole="button"
+              onPress={onOpenInbox}
+              style={styles.ctaButton}
+            >
+              <Text style={styles.ctaText}>Chat</Text>
+              <Ionicons color={colors.surface} name="chatbubbles-outline" size={18} />
+            </Pressable>
+          </View>
+        ) : (
+          <Pressable
+            accessibilityLabel="Partecipa all'evento"
+            accessibilityRole="button"
+            onPress={onToggleRegistration}
+            style={styles.ctaButton}
+          >
+            <Text style={styles.ctaText}>Partecipa</Text>
+            <Ionicons color={colors.surface} name="checkmark" size={18} />
+          </Pressable>
+        )}
       </View>
     </View>
   );
@@ -174,22 +249,27 @@ const styles = StyleSheet.create({
     gap: spacing.lg,
     padding: spacing.lg
   },
-  categoryBadge: {
+  badgeRow: {
     alignItems: "center",
-    alignSelf: "flex-start",
-    borderRadius: 28,
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm
+  },
+  registeredBadge: {
+    alignItems: "center",
+    backgroundColor: "#DCFCE7",
+    borderColor: "#BBF7D0",
+    borderRadius: 22,
     borderWidth: 1,
     flexDirection: "row",
     gap: 6,
-    minHeight: 44,
-    paddingHorizontal: spacing.lg,
+    minHeight: 42,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm
   },
-  categoryEmoji: {
-    fontSize: 16
-  },
-  categoryText: {
-    fontSize: 16,
+  registeredBadgeText: {
+    color: colors.green,
+    fontSize: 13,
     fontWeight: "900"
   },
   title: {
@@ -240,12 +320,10 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   addressCard: {
-    alignItems: "center",
     backgroundColor: colors.surface,
     borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
-    flexDirection: "row",
     gap: spacing.md,
     padding: spacing.md
   },
@@ -279,6 +357,11 @@ const styles = StyleSheet.create({
     top: 18,
     width: 28
   },
+  addressBottom: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md
+  },
   addressCopy: {
     flex: 1
   },
@@ -292,6 +375,21 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     marginTop: 2
+  },
+  mapButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: radius.sm,
+    flexDirection: "row",
+    gap: 6,
+    justifyContent: "center",
+    minHeight: 42,
+    paddingHorizontal: spacing.md
+  },
+  mapButtonText: {
+    color: colors.surface,
+    fontSize: 13,
+    fontWeight: "900"
   },
   channelCard: {
     alignItems: "center",
@@ -325,23 +423,16 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginTop: 2
   },
+  channelMeta: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: "800",
+    marginTop: spacing.xs
+  },
   tags: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm
-  },
-  tag: {
-    backgroundColor: "#F5EDFF",
-    borderColor: "#E2D7FF",
-    borderRadius: 18,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm
-  },
-  tagText: {
-    color: colors.teal,
-    fontSize: 12,
-    fontWeight: "900"
   },
   ctaBar: {
     alignItems: "center",
@@ -356,6 +447,10 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 0,
     ...shadow
+  },
+  ctaCopy: {
+    flex: 1,
+    paddingRight: spacing.sm
   },
   ctaPrice: {
     color: colors.ink,
@@ -376,11 +471,28 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     justifyContent: "center",
     minHeight: 50,
-    minWidth: 144,
+    minWidth: 112,
     paddingHorizontal: spacing.lg
   },
-  ctaButtonActive: {
-    backgroundColor: colors.danger
+  ctaActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  secondaryCtaButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.danger,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 50,
+    paddingHorizontal: spacing.md
+  },
+  secondaryCtaText: {
+    color: colors.danger,
+    fontSize: 14,
+    fontWeight: "900"
   },
   ctaText: {
     color: colors.surface,

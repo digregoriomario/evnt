@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import {
   KeyboardAvoidingView,
   Platform,
@@ -12,6 +12,11 @@ import {
 } from "react-native";
 
 import { CategoryChip } from "../components/CategoryChip";
+import { DateTimePickerField } from "../components/DateTimePickerField";
+import { ProfileImagePicker } from "../components/ProfileImagePicker";
+import { api, ApiError } from "../api";
+import { searchCitiesWorldwide } from "../api/geocoding";
+import { citySuggestions, type CitySuggestion } from "../data/cities";
 import { categories } from "../data/events";
 import { colors, radius, shadow, spacing } from "../theme";
 import { Category, UserProfile } from "../types";
@@ -23,6 +28,56 @@ type AuthScreenProps = {
   onComplete: (profile: UserProfile, credentials?: AuthCredentials) => Promise<AuthResult>;
 };
 
+type AuthField =
+  | "avatar"
+  | "bio"
+  | "birthDate"
+  | "city"
+  | "confirmPassword"
+  | "email"
+  | "interests"
+  | "name"
+  | "password";
+
+type AuthFieldErrors = Partial<Record<AuthField, string>>;
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const minimumAge = 16;
+const maxProfileImageMb = 5;
+const maxBioLength = 240;
+
+function normalizedEmail(value: string) {
+  return value.trim().toLowerCase();
+}
+
+function isValidEmail(value: string) {
+  return emailPattern.test(normalizedEmail(value));
+}
+
+function ageFromDate(value: string) {
+  const birth = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(birth.getTime())) {
+    return null;
+  }
+
+  const today = new Date();
+  let age = today.getFullYear() - birth.getFullYear();
+  const monthDelta = today.getMonth() - birth.getMonth();
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < birth.getDate())) {
+    age -= 1;
+  }
+  return age;
+}
+
+function imageSizeMb(value: string) {
+  const base64 = value.startsWith("data:image/") ? value.split(",")[1] : "";
+  return base64 ? (base64.length * 3) / 4 / (1024 * 1024) : 0;
+}
+
+function hasErrors(errors: AuthFieldErrors) {
+  return Object.keys(errors).length > 0;
+}
+
 export function AuthScreen({ onComplete }: AuthScreenProps) {
   const [authView, setAuthView] = useState<"welcome" | "form">("welcome");
   const [mode, setMode] = useState<"signup" | "login">("signup");
@@ -30,19 +85,23 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
+  const [passwordVisible, setPasswordVisible] = useState(false);
+  const [confirmPasswordVisible, setConfirmPasswordVisible] = useState(false);
   const [name, setName] = useState("");
   const [birthDate, setBirthDate] = useState("");
+  const [city, setCity] = useState("");
+  const [selectedCity, setSelectedCity] = useState<CitySuggestion | null>(null);
+  const [citySuggestionsOpen, setCitySuggestionsOpen] = useState(false);
+  const [remoteCitySuggestions, setRemoteCitySuggestions] = useState<CitySuggestion[]>([]);
+  const [citySearching, setCitySearching] = useState(false);
   const [avatar, setAvatar] = useState("");
   const [bio, setBio] = useState("");
   const [interests, setInterests] = useState<Category[]>([]);
   const [formError, setFormError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<AuthFieldErrors>({});
   const [submitting, setSubmitting] = useState(false);
 
-  const loginReady = email.includes("@") && password.length >= 6;
-  const accountReady = email.includes("@") && password.length >= 6 && password === confirmPassword;
-  const aboutReady = name.trim().length >= 2 && birthDate.trim().length >= 10;
-  const profileReady = interests.length >= 3;
-  const currentStepReady = step === 0 ? accountReady : step === 1 ? aboutReady : profileReady;
+  const today = useMemo(() => new Date(), []);
 
   const stepTitle = ["Crea il tuo account", "Parlaci di te", "Completa il tuo profilo"][step];
   const progress = `${step + 1}/3`;
@@ -50,11 +109,70 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
   const helperText = useMemo(() => {
     if (mode === "login") return "Inserisci email e password per accedere.";
     if (step === 0) return "Usa una password di almeno 6 caratteri.";
-    if (step === 1) return "La data serve per verificare il requisito 16+.";
+    if (step === 1) return "La citta serve per mostrarti eventi vicini anche senza geolocalizzazione.";
     return `Seleziona almeno 3 interessi. Ora: ${interests.length}/3.`;
   }, [interests.length, mode, step]);
 
+  useEffect(() => {
+    const normalized = city.trim();
+    if (!citySuggestionsOpen || normalized.length < 2) {
+      setRemoteCitySuggestions([]);
+      setCitySearching(false);
+      return;
+    }
+
+    let cancelled = false;
+    setCitySearching(true);
+    const timeout = setTimeout(() => {
+      searchCitiesWorldwide(normalized)
+        .then((suggestions) => {
+          if (!cancelled) {
+            setRemoteCitySuggestions(suggestions);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setRemoteCitySuggestions([]);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setCitySearching(false);
+          }
+        });
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [city, citySuggestionsOpen]);
+
+  const filteredCitySuggestions = useMemo(() => {
+    const normalized = city.trim().toLowerCase();
+    if (normalized.length === 0) {
+      return citySuggestions.slice(0, 5);
+    }
+
+    const localSuggestions = citySuggestions
+      .filter((suggestion) =>
+        `${suggestion.name} ${suggestion.province}`.toLowerCase().includes(normalized)
+      );
+
+    return [...remoteCitySuggestions, ...localSuggestions]
+      .filter(
+        (suggestion, index, all) =>
+          all.findIndex(
+            (item) =>
+              item.name.toLowerCase() === suggestion.name.toLowerCase() &&
+              item.province.toLowerCase() === suggestion.province.toLowerCase()
+          ) === index
+      )
+      .slice(0, 6);
+  }, [city, remoteCitySuggestions]);
+
   const toggleInterest = (category: Category) => {
+    clearFieldError("interests");
     setInterests((current) =>
       current.includes(category)
         ? current.filter((item) => item !== category)
@@ -62,17 +180,110 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
     );
   };
 
-  const insertAtSign = () => {
-    setEmail((current) => (current.includes("@") ? current : `${current}@`));
+  const clearFieldError = (field: AuthField) => {
+    setFieldErrors((current) => {
+      if (!current[field]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+    setFormError("");
+  };
+
+  const handleCityChange = (value: string) => {
+    clearFieldError("city");
+    setCity(value);
+    setSelectedCity(null);
+    setCitySuggestionsOpen(true);
+  };
+
+  const chooseCity = (suggestion: CitySuggestion) => {
+    setCity(suggestion.name);
+    setSelectedCity(suggestion);
+    clearFieldError("city");
+    setCitySuggestionsOpen(false);
+  };
+
+  const validateLogin = () => {
+    const errors: AuthFieldErrors = {};
+    if (!isValidEmail(email)) {
+      errors.email = "Inserisci un'email valida.";
+    }
+    if (!password) {
+      errors.password = "Inserisci la password.";
+    }
+    return errors;
+  };
+
+  const validateSignupStep = (targetStep: number) => {
+    const errors: AuthFieldErrors = {};
+    if (targetStep === 0) {
+      if (!isValidEmail(email)) {
+        errors.email = "Inserisci un'email valida.";
+      }
+      if (password.length < 6) {
+        errors.password = "La password deve avere almeno 6 caratteri.";
+      }
+      if (!confirmPassword) {
+        errors.confirmPassword = "Conferma la password.";
+      } else if (password !== confirmPassword) {
+        errors.confirmPassword = "Le password non coincidono.";
+      }
+    }
+
+    if (targetStep === 1) {
+      const age = ageFromDate(birthDate);
+      if (name.trim().length < 2) {
+        errors.name = "Inserisci almeno 2 caratteri.";
+      }
+      if (!birthDate) {
+        errors.birthDate = "Seleziona la data di nascita.";
+      } else if (age === null) {
+        errors.birthDate = "Data di nascita non valida.";
+      } else if (age < minimumAge) {
+        errors.birthDate = `Devi avere almeno ${minimumAge} anni.`;
+      }
+      if (city.trim().length < 2) {
+        errors.city = "La citta e obbligatoria.";
+      }
+    }
+
+    if (targetStep === 2) {
+      const imageMb = imageSizeMb(avatar);
+      if (imageMb > maxProfileImageMb) {
+        errors.avatar = `L'immagine supera ${maxProfileImageMb} MB. Scegli una foto piu leggera.`;
+      }
+      if (bio.length > maxBioLength) {
+        errors.bio = `La bio puo contenere al massimo ${maxBioLength} caratteri.`;
+      }
+      if (interests.length < 3) {
+        errors.interests = "Seleziona almeno 3 interessi.";
+      }
+    }
+
+    return errors;
+  };
+
+  const showValidationErrors = (errors: AuthFieldErrors, message = "Controlla i campi evidenziati.") => {
+    setFieldErrors(errors);
+    setFormError(message);
   };
 
   const submitAuth = async (profile: UserProfile, credentials: AuthCredentials) => {
     setFormError("");
+    setFieldErrors({});
     setSubmitting(true);
     try {
       const result = await onComplete(profile, credentials);
       if (!result.ok) {
-        setFormError(result.message ?? "Non e stato possibile completare l'accesso.");
+        const message = result.message ?? "Non e stato possibile completare l'accesso.";
+        setFormError(message);
+        if (credentials.mode === "signup" && message.toLowerCase().includes("email")) {
+          setFieldErrors({ email: message });
+          setStep(0);
+        }
       }
     } catch {
       setFormError("Non e stato possibile completare l'accesso.");
@@ -82,12 +293,19 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
   };
 
   const submitLogin = () => {
-    if (!loginReady || submitting) return;
+    if (submitting) return;
+    const errors = validateLogin();
+    if (hasErrors(errors)) {
+      showValidationErrors(errors, "Controlla email e password.");
+      return;
+    }
+    const fallbackCity = citySuggestions.find((suggestion) => suggestion.name === "Salerno");
     void submitAuth(
       {
         name: email.split("@")[0] || "Utente Evnt",
-        email,
+        email: normalizedEmail(email),
         city: "Salerno",
+        cityCoordinates: fallbackCity?.coordinates,
         birthDate: "2000-01-01",
         bio: "Bentornato su Evnt.",
         interests: ["Concerto", "Food", "Sport"]
@@ -97,12 +315,30 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
   };
 
   const submitSignup = () => {
-    if (!profileReady || submitting) return;
+    if (submitting) return;
+    const errors = {
+      ...validateSignupStep(0),
+      ...validateSignupStep(1),
+      ...validateSignupStep(2)
+    };
+    if (hasErrors(errors)) {
+      showValidationErrors(errors);
+      if (errors.email || errors.password || errors.confirmPassword) {
+        setStep(0);
+      } else if (errors.name || errors.birthDate || errors.city) {
+        setStep(1);
+      }
+      return;
+    }
+    const exactCity =
+      selectedCity ??
+      filteredCitySuggestions.find((suggestion) => suggestion.name.toLowerCase() === city.trim().toLowerCase());
     void submitAuth(
       {
         name: name.trim(),
-        email,
-        city: "Salerno",
+        email: normalizedEmail(email),
+        city: city.trim(),
+        cityCoordinates: exactCity?.coordinates,
         birthDate,
         bio: bio.trim() || "Pronto a scoprire nuovi eventi in zona.",
         interests,
@@ -112,10 +348,42 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
     );
   };
 
-  const goNext = () => {
-    if (!currentStepReady || submitting) return;
+  const goNext = async () => {
+    if (submitting) return;
+    const errors = validateSignupStep(step);
+    if (hasErrors(errors)) {
+      showValidationErrors(errors);
+      return;
+    }
+
+    if (step === 0) {
+      setSubmitting(true);
+      try {
+        const nextEmail = normalizedEmail(email);
+        const available = await api.emailAvailable(nextEmail);
+        if (!available) {
+          showValidationErrors(
+            { email: "Questa email e gia registrata. Accedi oppure usa un'altra email." },
+            "Email gia registrata."
+          );
+          return;
+        }
+        setEmail(nextEmail);
+      } catch (error) {
+        const message =
+          error instanceof ApiError && error.status === 400
+            ? "Inserisci un'email valida."
+            : "Non riesco a verificare l'email. Controlla la connessione al backend.";
+        showValidationErrors({ email: message }, message);
+        return;
+      } finally {
+        setSubmitting(false);
+      }
+    }
+
     if (step < 2) {
       setFormError("");
+      setFieldErrors({});
       setStep((current) => current + 1);
       return;
     }
@@ -125,11 +393,19 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
   const openSignup = () => {
     setMode("signup");
     setStep(0);
+    setFormError("");
+    setFieldErrors({});
+    setPasswordVisible(false);
+    setConfirmPasswordVisible(false);
     setAuthView("form");
   };
 
   const openLogin = () => {
     setMode("login");
+    setFormError("");
+    setFieldErrors({});
+    setPasswordVisible(false);
+    setConfirmPasswordVisible(false);
     setAuthView("form");
   };
 
@@ -211,43 +487,47 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
 
               {step === 0 && (
                 <>
-                  <Field label="Email">
+                  <Field error={fieldErrors.email} label="Email">
                     <View style={styles.emailInputWrap}>
                       <TextInput
                         autoCapitalize="none"
                         autoComplete="email"
                         autoCorrect={false}
                         keyboardType="email-address"
-                        onChangeText={setEmail}
+                        onChangeText={(value) => {
+                          setEmail(value);
+                          clearFieldError("email");
+                        }}
                         placeholder="nome@email.it"
                         placeholderTextColor={colors.muted}
                         style={styles.emailInput}
                         textContentType="emailAddress"
                         value={email}
                       />
-                      <Pressable accessibilityLabel="Inserisci chiocciola" onPress={insertAtSign} style={styles.atButton}>
-                        <Text style={styles.atButtonText}>@</Text>
-                      </Pressable>
                     </View>
                   </Field>
-                  <Field label="Password">
-                    <TextInput
-                      onChangeText={setPassword}
+                  <Field error={fieldErrors.password} label="Password">
+                    <PasswordInput
+                      onChangeText={(value) => {
+                        setPassword(value);
+                        clearFieldError("password");
+                      }}
                       placeholder="Minimo 6 caratteri"
-                      placeholderTextColor={colors.muted}
-                      secureTextEntry
-                      style={styles.input}
+                      onToggleVisibility={() => setPasswordVisible((current) => !current)}
                       value={password}
+                      visible={passwordVisible}
                     />
                   </Field>
-                  <Field label="Conferma password">
-                    <TextInput
-                      onChangeText={setConfirmPassword}
+                  <Field error={fieldErrors.confirmPassword} label="Conferma password">
+                    <PasswordInput
+                      onChangeText={(value) => {
+                        setConfirmPassword(value);
+                        clearFieldError("confirmPassword");
+                      }}
                       placeholder="Ripeti password"
-                      placeholderTextColor={colors.muted}
-                      secureTextEntry
-                      style={styles.input}
+                      onToggleVisibility={() => setConfirmPasswordVisible((current) => !current)}
                       value={confirmPassword}
+                      visible={confirmPasswordVisible}
                     />
                   </Field>
                 </>
@@ -255,49 +535,105 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
 
               {step === 1 && (
                 <>
-                  <Field label="Nome">
+                  <Field error={fieldErrors.name} label="Nome">
                     <TextInput
                       autoCapitalize="words"
-                      onChangeText={setName}
+                      onChangeText={(value) => {
+                        setName(value);
+                        clearFieldError("name");
+                      }}
                       placeholder="Il tuo nome"
                       placeholderTextColor={colors.muted}
                       style={styles.input}
                       value={name}
                     />
                   </Field>
-                  <Field label="Data di nascita">
-                    <TextInput
-                      onChangeText={setBirthDate}
-                      placeholder="AAAA-MM-GG"
-                      placeholderTextColor={colors.muted}
-                      style={styles.input}
+                  <Field error={fieldErrors.birthDate} label="Data di nascita">
+                    <DateTimePickerField
+                      maximumDate={today}
+                      mode="date"
+                      onChange={(value) => {
+                        setBirthDate(value);
+                        clearFieldError("birthDate");
+                      }}
+                      placeholder="Seleziona la data"
                       value={birthDate}
                     />
+                  </Field>
+                  <Field error={fieldErrors.city} label="Citta *">
+                    <View style={styles.autocompleteWrap}>
+                      <View style={styles.cityInputWrap}>
+                        <TextInput
+                          autoCapitalize="words"
+                          autoCorrect={false}
+                          onBlur={() => setTimeout(() => setCitySuggestionsOpen(false), 120)}
+                          onChangeText={handleCityChange}
+                          onFocus={() => setCitySuggestionsOpen(true)}
+                          placeholder="Es. Salerno"
+                          placeholderTextColor={colors.muted}
+                          style={styles.cityInput}
+                          value={city}
+                        />
+                        <Ionicons color={colors.muted} name="search-outline" size={19} />
+                      </View>
+
+                      {citySuggestionsOpen && filteredCitySuggestions.length > 0 && (
+                        <View style={styles.suggestionList}>
+                          {filteredCitySuggestions.map((suggestion) => (
+                            <Pressable
+                              accessibilityRole="button"
+                              key={suggestion.name}
+                              onPress={() => chooseCity(suggestion)}
+                              style={styles.suggestionRow}
+                            >
+                              <View style={styles.suggestionIcon}>
+                                <Ionicons color={colors.ink} name="business-outline" size={17} />
+                              </View>
+                              <View style={styles.suggestionCopy}>
+                                <Text style={styles.suggestionTitle}>{suggestion.name}</Text>
+                                <Text style={styles.suggestionMeta}>{suggestion.province}</Text>
+                              </View>
+                            </Pressable>
+                          ))}
+                        </View>
+                      )}
+
+                      {citySuggestionsOpen && citySearching && filteredCitySuggestions.length === 0 && (
+                        <View style={styles.suggestionList}>
+                          <View style={styles.suggestionRow}>
+                            <View style={styles.suggestionIcon}>
+                              <Ionicons color={colors.ink} name="globe-outline" size={17} />
+                            </View>
+                            <View style={styles.suggestionCopy}>
+                              <Text style={styles.suggestionTitle}>Cerco in tutto il mondo...</Text>
+                              <Text style={styles.suggestionMeta}>OpenStreetMap</Text>
+                            </View>
+                          </View>
+                        </View>
+                      )}
+                    </View>
                   </Field>
                 </>
               )}
 
               {step === 2 && (
                 <>
-                  <Field label="Immagine profilo">
-                    <View style={styles.avatarRow}>
-                      <View style={styles.avatarPreview}>
-                        <Ionicons color={colors.teal} name="image-outline" size={24} />
-                      </View>
-                      <TextInput
-                        autoCapitalize="none"
-                        onChangeText={setAvatar}
-                        placeholder="Link immagine opzionale"
-                        placeholderTextColor={colors.muted}
-                        style={[styles.input, styles.avatarInput]}
-                        value={avatar}
-                      />
-                    </View>
+                  <Field error={fieldErrors.avatar} label="Immagine profilo">
+                    <ProfileImagePicker
+                      onChange={(value) => {
+                        setAvatar(value);
+                        clearFieldError("avatar");
+                      }}
+                      value={avatar}
+                    />
                   </Field>
-                  <Field label="Bio">
+                  <Field error={fieldErrors.bio} label="Bio">
                     <TextInput
                       multiline
-                      onChangeText={setBio}
+                      onChangeText={(value) => {
+                        setBio(value);
+                        clearFieldError("bio");
+                      }}
                       placeholder="Racconta in poche parole cosa ti piace fare."
                       placeholderTextColor={colors.muted}
                       style={[styles.input, styles.textArea]}
@@ -316,6 +652,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
                         />
                       ))}
                     </View>
+                    {fieldErrors.interests ? <Text style={styles.fieldErrorText}>{fieldErrors.interests}</Text> : null}
                   </View>
                 </>
               )}
@@ -324,7 +661,11 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
                 <Pressable
                   accessibilityRole="button"
                   disabled={step === 0}
-                  onPress={() => setStep((current) => Math.max(0, current - 1))}
+                  onPress={() => {
+                    setFormError("");
+                    setFieldErrors({});
+                    setStep((current) => Math.max(0, current - 1));
+                  }}
                   style={[styles.secondaryButton, step === 0 && styles.disabledSecondary]}
                 >
                   <Ionicons color={step === 0 ? colors.muted : colors.ink} name="arrow-back" size={18} />
@@ -332,12 +673,12 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
                 </Pressable>
                 <Pressable
                   accessibilityRole="button"
-                  disabled={!currentStepReady || submitting}
-                  onPress={goNext}
-                  style={[styles.primaryButton, (!currentStepReady || submitting) && styles.disabledButton]}
+                  disabled={submitting}
+                  onPress={() => void goNext()}
+                  style={[styles.primaryButton, submitting && styles.disabledButton]}
                 >
                   <Text style={styles.primaryText}>
-                    {submitting ? "Attendi..." : step === 2 ? "Completa" : "Avanti"}
+                    {submitting ? (step === 0 ? "Controllo..." : "Attendi...") : step === 2 ? "Completa" : "Avanti"}
                   </Text>
                   <Ionicons color={colors.surface} name="arrow-forward" size={18} />
                 </Pressable>
@@ -354,40 +695,42 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
               </View>
               <Text style={styles.helper}>{helperText}</Text>
               {formError.length > 0 && <Text style={styles.errorText}>{formError}</Text>}
-              <Field label="Email">
+              <Field error={fieldErrors.email} label="Email">
                 <View style={styles.emailInputWrap}>
                   <TextInput
                     autoCapitalize="none"
                     autoComplete="email"
                     autoCorrect={false}
                     keyboardType="email-address"
-                    onChangeText={setEmail}
+                    onChangeText={(value) => {
+                      setEmail(value);
+                      clearFieldError("email");
+                    }}
                     placeholder="nome@email.it"
                     placeholderTextColor={colors.muted}
                     style={styles.emailInput}
                     textContentType="emailAddress"
                     value={email}
                   />
-                  <Pressable accessibilityLabel="Inserisci chiocciola" onPress={insertAtSign} style={styles.atButton}>
-                    <Text style={styles.atButtonText}>@</Text>
-                  </Pressable>
                 </View>
               </Field>
-              <Field label="Password">
-                <TextInput
-                  onChangeText={setPassword}
+              <Field error={fieldErrors.password} label="Password">
+                <PasswordInput
+                  onChangeText={(value) => {
+                    setPassword(value);
+                    clearFieldError("password");
+                  }}
                   placeholder="La tua password"
-                  placeholderTextColor={colors.muted}
-                  secureTextEntry
-                  style={styles.input}
+                  onToggleVisibility={() => setPasswordVisible((current) => !current)}
                   value={password}
+                  visible={passwordVisible}
                 />
               </Field>
               <Pressable
                 accessibilityRole="button"
-                disabled={!loginReady || submitting}
+                disabled={submitting}
                 onPress={submitLogin}
-                style={[styles.primaryButton, (!loginReady || submitting) && styles.disabledButton]}
+                style={[styles.primaryButton, submitting && styles.disabledButton]}
               >
                 <Text style={styles.primaryText}>{submitting ? "Attendi..." : "Accedi"}</Text>
                 <Ionicons color={colors.surface} name="log-in-outline" size={18} />
@@ -404,14 +747,56 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
 
 type FieldProps = {
   children: ReactNode;
+  error?: string;
   label: string;
 };
 
-function Field({ children, label }: FieldProps) {
+function Field({ children, error, label }: FieldProps) {
   return (
     <View style={styles.fieldGroup}>
       <Text style={styles.label}>{label}</Text>
       {children}
+      {error ? <Text style={styles.fieldErrorText}>{error}</Text> : null}
+    </View>
+  );
+}
+
+type PasswordInputProps = {
+  onChangeText: (value: string) => void;
+  onToggleVisibility: () => void;
+  placeholder: string;
+  value: string;
+  visible: boolean;
+};
+
+function PasswordInput({
+  onChangeText,
+  onToggleVisibility,
+  placeholder,
+  value,
+  visible
+}: PasswordInputProps) {
+  return (
+    <View style={styles.passwordInputWrap}>
+      <TextInput
+        autoCapitalize="none"
+        autoCorrect={false}
+        onChangeText={onChangeText}
+        placeholder={placeholder}
+        placeholderTextColor={colors.muted}
+        secureTextEntry={!visible}
+        style={styles.passwordInput}
+        textContentType="password"
+        value={value}
+      />
+      <Pressable
+        accessibilityLabel={visible ? "Nascondi password" : "Mostra password"}
+        accessibilityRole="button"
+        onPress={onToggleVisibility}
+        style={styles.passwordToggle}
+      >
+        <Ionicons color={colors.ink} name={visible ? "eye-off-outline" : "eye-outline"} size={20} />
+      </Pressable>
     </View>
   );
 }
@@ -562,6 +947,12 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     padding: spacing.sm
   },
+  fieldErrorText: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 16
+  },
   fieldGroup: { gap: spacing.sm },
   label: {
     color: colors.ink,
@@ -578,7 +969,13 @@ const styles = StyleSheet.create({
     minHeight: 48,
     paddingHorizontal: spacing.md
   },
-  emailInputWrap: {
+  passwordInput: {
+    color: colors.ink,
+    flex: 1,
+    fontSize: 15,
+    minHeight: 46
+  },
+  passwordInputWrap: {
     alignItems: "center",
     backgroundColor: colors.surface,
     borderColor: colors.line,
@@ -589,44 +986,56 @@ const styles = StyleSheet.create({
     paddingLeft: spacing.md,
     paddingRight: spacing.xs
   },
+  passwordToggle: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.sm,
+    height: 36,
+    justifyContent: "center",
+    width: 42
+  },
+  emailInputWrap: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    minHeight: 48,
+    paddingLeft: spacing.md,
+    paddingRight: spacing.md
+  },
   emailInput: {
     color: colors.ink,
     flex: 1,
     fontSize: 15,
     minHeight: 46
   },
-  atButton: {
-    alignItems: "center",
-    backgroundColor: colors.tealSoft,
-    borderRadius: radius.sm,
-    height: 36,
-    justifyContent: "center",
-    width: 42
-  },
-  atButtonText: {
-    color: colors.teal,
-    fontSize: 18,
-    fontWeight: "900"
-  },
   textArea: {
     minHeight: 104,
     paddingTop: spacing.md,
     textAlignVertical: "top"
   },
-  avatarRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.md
+  autocompleteWrap: {
+    gap: spacing.sm
   },
-  avatarPreview: {
+  cityInput: {
+    color: colors.ink,
+    flex: 1,
+    fontSize: 15,
+    minHeight: 46
+  },
+  cityInputWrap: {
     alignItems: "center",
-    backgroundColor: colors.tealSoft,
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
     borderRadius: radius.md,
-    height: 54,
-    justifyContent: "center",
-    width: 54
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 48,
+    paddingHorizontal: spacing.md
   },
-  avatarInput: { flex: 1 },
   chips: {
     flexDirection: "row",
     flexWrap: "wrap",
@@ -686,5 +1095,45 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "900"
   },
-  disabledSecondaryText: { color: colors.muted }
+  disabledSecondaryText: { color: colors.muted },
+  suggestionCopy: {
+    flex: 1
+  },
+  suggestionIcon: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 18,
+    height: 36,
+    justifyContent: "center",
+    width: 36
+  },
+  suggestionList: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    overflow: "hidden",
+    ...shadow
+  },
+  suggestionMeta: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    marginTop: 2
+  },
+  suggestionRow: {
+    alignItems: "center",
+    borderBottomColor: colors.line,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    minHeight: 58,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  suggestionTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "900"
+  }
 });

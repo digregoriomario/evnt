@@ -15,7 +15,7 @@ export type RegisterPayload = {
   password: string;
   name: string;
   birthDate: string;
-  city?: string;
+  city: string;
   bio?: string;
   image?: string;
   interests?: string[];
@@ -91,6 +91,14 @@ export const api = {
     });
     setAuthToken(res.token);
     return res;
+  },
+  async emailAvailable(email: string): Promise<boolean> {
+    const params = new URLSearchParams({ email });
+    const { available } = await apiRequest<{ available: boolean }>(
+      `/auth/email-available?${params.toString()}`,
+      { auth: false }
+    );
+    return available;
   },
   async me(): Promise<UserProfile & { id: number }> {
     const { user } = await apiRequest<{ user: UserProfile & { id: number } }>("/auth/me");

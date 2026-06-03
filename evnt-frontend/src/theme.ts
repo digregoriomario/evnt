@@ -1,11 +1,11 @@
 export const colors = {
-  background: "#F6F7F9",
+  background: "#F8FAFC",
   surface: "#FFFFFF",
-  surfaceMuted: "#EEF1F4",
-  ink: "#111827",
-  muted: "#6B7280",
-  line: "#E5E7EB",
-  primary: "#111827",
+  surfaceMuted: "#F1F5F9",
+  ink: "#0F172A",
+  muted: "#64748B",
+  line: "#E2E8F0",
+  primary: "#0F172A",
   primaryDark: "#020617",
   teal: "#2563EB",
   tealSoft: "#DBEAFE",
@@ -31,9 +31,9 @@ export const radius = {
 };
 
 export const shadow = {
-  shadowColor: "#111827",
-  shadowOpacity: 0.04,
-  shadowRadius: 10,
-  shadowOffset: { width: 0, height: 4 },
+  shadowColor: "#0F172A",
+  shadowOpacity: 0.05,
+  shadowRadius: 14,
+  shadowOffset: { width: 0, height: 6 },
   elevation: 2
 };

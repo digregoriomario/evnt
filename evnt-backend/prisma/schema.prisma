@@ -28,7 +28,7 @@ model User {
   bio       String?  @db.Text
   password  String   @db.VarChar(255)
   city      String?  @db.VarChar(120)
-  image     String?  @db.VarChar(500)
+  image     String?  @db.Text
   birthday  DateTime @db.Date
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -90,7 +90,7 @@ model Event {
   categoryId  Int      @map("category_id")
   chatType    ChatType @default(OPEN_GROUP) @map("chat_type")
   isLive      Boolean  @default(false) @map("is_live")
-  image       String?  @db.VarChar(500)
+  image       String?  @db.Text
   tags        String[] @default([])
   createdAt   DateTime @default(now()) @map("created_at")
 

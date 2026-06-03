@@ -40,6 +40,81 @@ export const categoryEmojis: Record<Category, string> = {
   Tech: "💻"
 };
 
+export const categoryDefaultImages: Record<Category, string> = {
+  Serata: "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?auto=format&fit=crop&w=1200&q=80",
+  Sport: "https://images.unsplash.com/photo-1459865264687-595d652de67e?auto=format&fit=crop&w=1200&q=80",
+  Concerto: "https://images.unsplash.com/photo-1501386761578-eac5c94b800a?auto=format&fit=crop&w=1200&q=80",
+  Food: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1200&q=80",
+  Social: "https://images.unsplash.com/photo-1610890716171-6b1bb98ffd09?auto=format&fit=crop&w=1200&q=80",
+  Arte: "https://images.unsplash.com/photo-1545989253-02cc26577f88?auto=format&fit=crop&w=1200&q=80",
+  Tech: "https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=1200&q=80"
+};
+
+export const eventSubcategories: Record<Category, string[]> = {
+  Serata: ["Aperitivo", "Dopocena", "Club", "Karaoke"],
+  Sport: ["Calcetto 5v5", "Calcetto 8v8", "Calcio a 11", "Basket", "Running"],
+  Concerto: ["Live band", "DJ set", "Jam session", "Acustico"],
+  Food: ["Street food", "Cena", "Degustazione", "Tour"],
+  Social: ["Boardgame", "Networking", "Passeggiata", "Nuove amicizie"],
+  Arte: ["Museo", "Mostra", "Teatro", "Workshop"],
+  Tech: ["Hackathon", "Workshop", "Meetup", "Studio group"]
+};
+
+const subcategoryAliases: Partial<Record<Category, Record<string, string[]>>> = {
+  Arte: {
+    Museo: ["museo", "pinacoteca"]
+  },
+  Concerto: {
+    "Live band": ["live", "band", "jam"],
+    "DJ set": ["dj"]
+  },
+  Food: {
+    "Street food": ["street food", "food tour"]
+  },
+  Sport: {
+    "Calcetto 5v5": ["5v5", "5vs5"],
+    "Calcetto 8v8": ["8v8", "8vs8"],
+    "Calcio a 11": ["calcio a 11", "11v11", "11vs11"]
+  },
+  Tech: {
+    Workshop: ["workshop", "lab", "laboratorio"]
+  }
+};
+
+function normalizeSubcategoryText(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/vs/g, "v")
+    .replace(/[^a-z0-9]+/g, " ")
+    .trim();
+}
+
+export function getEventSubcategoryLabel(
+  event: Pick<EvntEvent, "category" | "description" | "subcategory" | "tags" | "title">
+) {
+  if (event.subcategory) {
+    return event.subcategory;
+  }
+
+  const source = normalizeSubcategoryText(`${event.title} ${event.description} ${event.tags.join(" ")}`);
+  const candidates = eventSubcategories[event.category];
+
+  return (
+    candidates.find((label) => {
+      const normalizedLabel = normalizeSubcategoryText(label);
+      const aliases = [
+        normalizedLabel,
+        ...(subcategoryAliases[event.category]?.[label] ?? []).map(normalizeSubcategoryText)
+      ];
+
+      return aliases.some((alias) => {
+        const tokens = alias.split(" ").filter((token) => token.length > 1);
+        return source.includes(alias) || tokens.every((token) => source.includes(token));
+      });
+    }) ?? event.category
+  );
+}
+
 export const initialEvents: EvntEvent[] = [
   {
     id: "sunset-jam",
@@ -64,6 +139,7 @@ export const initialEvents: EvntEvent[] = [
     chatMode: "Gruppo aperto",
     tags: ["live", "mare", "indie"],
     coordinates: { latitude: 40.6715, longitude: 14.7537 },
+    subcategory: "Live band",
     status: "trending"
   },
   {
@@ -89,6 +165,7 @@ export const initialEvents: EvntEvent[] = [
     chatMode: "Gruppo aperto",
     tags: ["5vs5", "sera", "amatoriale"],
     coordinates: { latitude: 40.6882, longitude: 14.7709 },
+    subcategory: "Calcetto 5v5",
     status: "live"
   },
   {
@@ -113,7 +190,8 @@ export const initialEvents: EvntEvent[] = [
     organizer: "Food Walk Salerno",
     chatMode: "Solo annunci",
     tags: ["gratis", "local", "tour"],
-    coordinates: { latitude: 40.6782, longitude: 14.7589 }
+    coordinates: { latitude: 40.6782, longitude: 14.7589 },
+    subcategory: "Street food"
   },
   {
     id: "boardgame-cafe",
@@ -137,7 +215,8 @@ export const initialEvents: EvntEvent[] = [
     organizer: "Community Evnt",
     chatMode: "Gruppo aperto",
     tags: ["boardgame", "nuove amicizie"],
-    coordinates: { latitude: 40.6766, longitude: 14.7531 }
+    coordinates: { latitude: 40.6766, longitude: 14.7531 },
+    subcategory: "Boardgame"
   },
   {
     id: "notte-museo",
@@ -161,7 +240,8 @@ export const initialEvents: EvntEvent[] = [
     organizer: "Musei in Rete",
     chatMode: "Solo annunci",
     tags: ["cultura", "sera"],
-    coordinates: { latitude: 40.6787, longitude: 14.7562 }
+    coordinates: { latitude: 40.6787, longitude: 14.7562 },
+    subcategory: "Museo"
   },
   {
     id: "hack-casual",
@@ -185,6 +265,7 @@ export const initialEvents: EvntEvent[] = [
     organizer: "Fablab UniSA",
     chatMode: "Gruppo aperto",
     tags: ["workshop", "gratis"],
-    coordinates: { latitude: 40.7485, longitude: 14.7711 }
+    coordinates: { latitude: 40.7485, longitude: 14.7711 },
+    subcategory: "Workshop"
   }
 ];

@@ -15,6 +15,9 @@ export const errorHandler = (
   res: Response,
   _next: NextFunction
 ) => {
+  if (isPayloadTooLarge(err)) {
+    return res.status(413).json({ error: "Immagine troppo pesante. Scegli una foto piu leggera." });
+  }
   if (err instanceof ZodError) {
     return res.status(400).json({ error: "Validation failed", details: err.flatten() });
   }
@@ -32,3 +35,14 @@ export const errorHandler = (
   console.error(err);
   return res.status(500).json({ error: "Internal server error" });
 };
+
+function isPayloadTooLarge(err: unknown) {
+  return (
+    typeof err === "object" &&
+    err !== null &&
+    "type" in err &&
+    "status" in err &&
+    (err as { status?: unknown; type?: unknown }).status === 413 &&
+    (err as { status?: unknown; type?: unknown }).type === "entity.too.large"
+  );
+}

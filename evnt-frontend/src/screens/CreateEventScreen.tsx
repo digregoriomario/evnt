@@ -1,8 +1,12 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ReactNode, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useState } from "react";
 import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
-import { categoryColors, categorySoftColors } from "../data/events";
+import { distanceBetweenKm, searchPlacesWorldwide } from "../api/geocoding";
+import { DateTimePickerField } from "../components/DateTimePickerField";
+import { PillButton } from "../components/PillButton";
+import { findCitySuggestion } from "../data/cities";
+import { categoryColors, categoryDefaultImages, categorySoftColors, eventSubcategories } from "../data/events";
 import { placeSuggestions, type PlaceSuggestion } from "../data/places";
 import { colors, radius, shadow, spacing } from "../theme";
 import { Category, ChatMode, EvntEvent, UserProfile } from "../types";
@@ -12,6 +16,9 @@ type CreateEventScreenProps = {
   onCreate: (event: EvntEvent) => void;
 };
 
+type CreateField = "address" | "capacity" | "date" | "description" | "place" | "price" | "time" | "title";
+type CreateFieldErrors = Partial<Record<CreateField, string>>;
+
 type EventTypeOption = {
   emoji: string;
   label: string;
@@ -20,33 +27,90 @@ type EventTypeOption = {
 
 const eventTypes: EventTypeOption[] = [
   { emoji: "🌙", label: "Serate", category: "Serata" },
-  { emoji: "⚽", label: "Calcetto", category: "Sport" },
+  { emoji: "⚽", label: "Sport", category: "Sport" },
   { emoji: "🎸", label: "Concerti", category: "Concerto" },
-  { emoji: "🏃", label: "Sport", category: "Sport" },
+  { emoji: "🍔", label: "Food", category: "Food" },
   { emoji: "🤝", label: "Social", category: "Social" },
-  { emoji: "📅", label: "Altro", category: "Arte" }
+  { emoji: "🎨", label: "Arte", category: "Arte" },
+  { emoji: "💻", label: "Tech", category: "Tech" }
 ];
-
-const defaultImage =
-  "https://images.unsplash.com/photo-1528605248644-14dd04022da1?auto=format&fit=crop&w=1200&q=80";
 
 const createPrimary = "#5A4BC4";
 const createPrimarySoft = "#F0EEFF";
+const dayNames = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
+const monthNames = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
+const maxTitleLength = 90;
+const maxDescriptionLength = 500;
+const maxAddressLength = 180;
+const maxCapacity = 10000;
+const maxPrice = 10000;
+
+function toIsoDate(date: Date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function toTimeValue(date: Date) {
+  return `${String(date.getHours()).padStart(2, "0")}:${String(date.getMinutes()).padStart(2, "0")}`;
+}
+
+function getDefaultEventDateTime() {
+  const now = new Date();
+  const target = new Date(now);
+  target.setHours(19, 0, 0, 0);
+  if (target.getTime() < now.getTime()) {
+    target.setDate(target.getDate() + 1);
+  }
+
+  return {
+    date: toIsoDate(target),
+    time: toTimeValue(target)
+  };
+}
+
+function localEventDateTime(date: string, time: string) {
+  const parsed = new Date(`${date}T${time || "00:00"}:00`);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatEventDateLabel(value: string) {
+  const date = new Date(`${value}T12:00:00`);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+
+  const today = new Date();
+  const isToday =
+    date.getFullYear() === today.getFullYear() &&
+    date.getMonth() === today.getMonth() &&
+    date.getDate() === today.getDate();
+
+  return isToday ? "Oggi" : `${dayNames[date.getDay()]} ${date.getDate()} ${monthNames[date.getMonth()]}`;
+}
+
+function hasCreateErrors(errors: CreateFieldErrors) {
+  return Object.keys(errors).length > 0;
+}
 
 export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
+  const [defaultDateTime] = useState(() => getDefaultEventDateTime());
   const [step, setStep] = useState(0);
   const [selectedType, setSelectedType] = useState(eventTypes[1]);
+  const [selectedSubcategory, setSelectedSubcategory] = useState(eventSubcategories[eventTypes[1].category][0]);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [place, setPlace] = useState("");
   const [address, setAddress] = useState("");
   const [selectedPlace, setSelectedPlace] = useState<PlaceSuggestion | null>(null);
   const [placeSuggestionsOpen, setPlaceSuggestionsOpen] = useState(false);
-  const [date, setDate] = useState("");
-  const [time, setTime] = useState("");
+  const [remotePlaceSuggestions, setRemotePlaceSuggestions] = useState<PlaceSuggestion[]>([]);
+  const [placeSearching, setPlaceSearching] = useState(false);
+  const [date, setDate] = useState(defaultDateTime.date);
+  const [time, setTime] = useState(defaultDateTime.time);
   const [capacity, setCapacity] = useState("");
   const [price, setPrice] = useState("");
   const [chatMode, setChatMode] = useState<ChatMode>("Gruppo aperto");
+  const [formError, setFormError] = useState("");
+  const [fieldErrors, setFieldErrors] = useState<CreateFieldErrors>({});
 
   const parsedPrice = useMemo(() => Number.parseFloat(price.replace(",", ".")), [price]);
   const parsedCapacity = useMemo(() => Number.parseInt(capacity, 10), [capacity]);
@@ -55,6 +119,52 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
   const priceLabel = isFree ? "Gratis" : `EUR ${parsedPrice}`;
   const selectedAccent = categoryColors[selectedType.category];
   const selectedSoft = categorySoftColors[selectedType.category];
+  const selectedSubcategories = eventSubcategories[selectedType.category];
+  const minimumEventDate = useMemo(() => new Date(), []);
+  const eventDateTime = useMemo(() => localEventDateTime(date, time), [date, time]);
+  const eventIsInPast = eventDateTime ? eventDateTime.getTime() < Date.now() : true;
+  const originCoordinates = user.cityCoordinates ?? findCitySuggestion(user.city)?.coordinates;
+
+  useEffect(() => {
+    if (!selectedSubcategories.includes(selectedSubcategory)) {
+      setSelectedSubcategory(selectedSubcategories[0]);
+    }
+  }, [selectedSubcategories, selectedSubcategory]);
+
+  useEffect(() => {
+    const normalized = place.trim();
+    if (!placeSuggestionsOpen || normalized.length < 2) {
+      setRemotePlaceSuggestions([]);
+      setPlaceSearching(false);
+      return;
+    }
+
+    let cancelled = false;
+    setPlaceSearching(true);
+    const timeout = setTimeout(() => {
+      searchPlacesWorldwide(normalized, originCoordinates)
+        .then((suggestions) => {
+          if (!cancelled) {
+            setRemotePlaceSuggestions(suggestions);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setRemotePlaceSuggestions([]);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setPlaceSearching(false);
+          }
+        });
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [originCoordinates, place, placeSuggestionsOpen]);
 
   const filteredPlaceSuggestions = useMemo(() => {
     const normalized = place.trim().toLowerCase();
@@ -62,43 +172,132 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
       return [];
     }
 
-    return placeSuggestions
+    const localSuggestions = placeSuggestions
       .filter((item) => {
         const searchable = `${item.name} ${item.address} ${item.city}`.toLowerCase();
         return searchable.includes(normalized);
       })
-      .slice(0, 5);
-  }, [place]);
+      .map((suggestion) => ({
+        ...suggestion,
+        distanceKm: originCoordinates
+          ? distanceBetweenKm(originCoordinates, suggestion.coordinates)
+          : suggestion.distanceKm
+      }));
 
-  const canGoNext =
-    step === 0
-      ? title.trim().length > 2
-      : step === 1
-        ? place.trim().length > 1 && date.trim().length > 0 && time.trim().length > 0
-        : true;
+    return [...remotePlaceSuggestions, ...localSuggestions]
+      .filter(
+        (suggestion, index, all) =>
+          all.findIndex(
+            (item) =>
+              item.name.toLowerCase() === suggestion.name.toLowerCase() &&
+              item.address.toLowerCase() === suggestion.address.toLowerCase()
+          ) === index
+      )
+      .slice(0, 6);
+  }, [originCoordinates, place, remotePlaceSuggestions]);
+
+  const clearFieldError = (field: CreateField) => {
+    setFieldErrors((current) => {
+      if (!current[field]) {
+        return current;
+      }
+      const next = { ...current };
+      delete next[field];
+      return next;
+    });
+    setFormError("");
+  };
+
+  const validateStep = (targetStep: number) => {
+    const errors: CreateFieldErrors = {};
+
+    if (targetStep === 0) {
+      const trimmedTitle = title.trim();
+      if (trimmedTitle.length < 3) {
+        errors.title = "Inserisci un titolo di almeno 3 caratteri.";
+      } else if (trimmedTitle.length > maxTitleLength) {
+        errors.title = `Il titolo puo contenere al massimo ${maxTitleLength} caratteri.`;
+      }
+      if (description.length > maxDescriptionLength) {
+        errors.description = `La descrizione puo contenere al massimo ${maxDescriptionLength} caratteri.`;
+      }
+    }
+
+    if (targetStep === 1) {
+      const normalizedCapacity = capacity.trim();
+      const normalizedPrice = price.trim();
+      if (place.trim().length < 2) {
+        errors.place = "Inserisci il luogo dell'evento.";
+      }
+      if (address.length > maxAddressLength) {
+        errors.address = `L'indirizzo puo contenere al massimo ${maxAddressLength} caratteri.`;
+      }
+      if (!date) {
+        errors.date = "Seleziona una data.";
+      }
+      if (!time) {
+        errors.time = "Seleziona un orario.";
+      }
+      if (date && time && eventIsInPast) {
+        errors.time = "Data e orario non possono essere antecedenti a ora.";
+      }
+      if (normalizedCapacity && !/^\d+$/.test(normalizedCapacity)) {
+        errors.capacity = "Inserisci un numero intero oppure lascia vuoto.";
+      } else if (normalizedCapacity && Number.isFinite(parsedCapacity) && parsedCapacity <= 0) {
+        errors.capacity = "Lascia vuoto per posti illimitati oppure inserisci un numero maggiore di 0.";
+      } else if (Number.isFinite(parsedCapacity) && parsedCapacity > maxCapacity) {
+        errors.capacity = `Massimo ${maxCapacity} posti.`;
+      }
+      if (normalizedPrice && !/^\d+([,.]\d{1,2})?$/.test(normalizedPrice)) {
+        errors.price = "Inserisci un costo valido, es. 8 oppure 8,50.";
+      } else if (Number.isFinite(parsedPrice) && parsedPrice > maxPrice) {
+        errors.price = `Costo massimo EUR ${maxPrice}.`;
+      }
+    }
+
+    return errors;
+  };
+
+  const validateBeforePublish = () => {
+    const errors = {
+      ...validateStep(0),
+      ...validateStep(1)
+    };
+    return errors;
+  };
+
+  const showCreateErrors = (errors: CreateFieldErrors) => {
+    setFieldErrors(errors);
+    setFormError("Controlla i campi evidenziati prima di continuare.");
+  };
 
   const resetForm = () => {
+    const nextDefault = getDefaultEventDateTime();
     setStep(0);
     setSelectedType(eventTypes[1]);
+    setSelectedSubcategory(eventSubcategories[eventTypes[1].category][0]);
     setTitle("");
     setDescription("");
     setPlace("");
     setAddress("");
     setSelectedPlace(null);
     setPlaceSuggestionsOpen(false);
-    setDate("");
-    setTime("");
+    setDate(nextDefault.date);
+    setTime(nextDefault.time);
     setCapacity("");
     setPrice("");
     setChatMode("Gruppo aperto");
+    setFormError("");
+    setFieldErrors({});
   };
 
   const publish = () => {
+    const dateTime = eventDateTime ?? new Date();
     onCreate({
       id: `created-${Date.now()}`,
       title: title.trim(),
       category: selectedType.category,
-      date: date.trim(),
+      date: formatEventDateLabel(date),
       time: time.trim(),
       place: place.trim(),
       city: selectedPlace?.city ?? user.city,
@@ -109,18 +308,27 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
       popularity: 10,
       participants: 1,
       capacity: Number.isFinite(parsedCapacity) && parsedCapacity > 0 ? parsedCapacity : null,
-      image: defaultImage,
-      description: description.trim() || `${selectedType.label} creato da ${user.name}.`,
+      image: categoryDefaultImages[selectedType.category],
+      description: description.trim() || `${selectedSubcategory} creato da ${user.name}.`,
       organizer: user.name,
       chatMode,
-      tags: [selectedType.label.toLowerCase(), (selectedPlace?.city ?? user.city).toLowerCase(), "nuovo"],
-      coordinates: selectedPlace?.coordinates ?? { latitude: 40.6782, longitude: 14.7589 }
+      tags: [
+        selectedType.label.toLowerCase(),
+        selectedSubcategory.toLowerCase(),
+        (selectedPlace?.city ?? user.city).toLowerCase(),
+        "nuovo"
+      ],
+      coordinates: selectedPlace?.coordinates ?? { latitude: 40.6782, longitude: 14.7589 },
+      dateTimeIso: dateTime.toISOString(),
+      subcategory: selectedSubcategory
     });
 
     resetForm();
   };
 
   const goBack = () => {
+    setFormError("");
+    setFieldErrors({});
     if (step === 0) {
       resetForm();
       return;
@@ -129,7 +337,17 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
   };
 
   const goNext = () => {
-    if (!canGoNext) return;
+    const errors = step === 2 ? validateBeforePublish() : validateStep(step);
+    if (hasCreateErrors(errors)) {
+      showCreateErrors(errors);
+      if (step === 2) {
+        setStep(errors.title || errors.description ? 0 : 1);
+      }
+      return;
+    }
+
+    setFormError("");
+    setFieldErrors({});
     if (step < 2) {
       setStep((current) => current + 1);
       return;
@@ -139,6 +357,7 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
 
   const handlePlaceChange = (value: string) => {
     setPlace(value);
+    clearFieldError("place");
     setSelectedPlace(null);
     setPlaceSuggestionsOpen(value.trim().length > 1);
   };
@@ -147,17 +366,24 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
     setPlace(suggestion.name);
     setAddress(suggestion.address);
     setSelectedPlace(suggestion);
+    clearFieldError("place");
+    clearFieldError("address");
     setPlaceSuggestionsOpen(false);
   };
 
   return (
     <View style={styles.root}>
       <View style={styles.topBar}>
-        <Pressable accessibilityLabel="Indietro" onPress={goBack} style={styles.backButton}>
+        <Pressable accessibilityLabel="Indietro" accessibilityRole="button" onPress={goBack} style={styles.backButton}>
           <Ionicons color={colors.ink} name="arrow-back" size={24} />
         </Pressable>
         <Text style={styles.headerTitle}>Nuovo evento • {step + 1}/3</Text>
-        <Pressable accessibilityRole="button" onPress={resetForm} style={styles.cancelButton}>
+        <Pressable
+          accessibilityLabel="Annulla creazione evento"
+          accessibilityRole="button"
+          onPress={resetForm}
+          style={styles.cancelButton}
+        >
           <Text style={styles.cancelText}>Annulla</Text>
         </Pressable>
       </View>
@@ -168,6 +394,7 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
             <View key={item} style={[styles.progressDot, item <= step && styles.progressDotActive]} />
           ))}
         </View>
+        {formError ? <Text style={styles.formErrorText}>{formError}</Text> : null}
 
         {step === 0 && (
           <View style={styles.panel}>
@@ -178,36 +405,61 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
                 const accent = categoryColors[item.category];
                 const soft = categorySoftColors[item.category];
                 return (
-                  <Pressable
+                  <PillButton
+                    accent={accent}
+                    accessibilityLabel={`Seleziona tipo evento ${item.label}`}
+                    emoji={item.emoji}
                     key={item.label}
-                    onPress={() => setSelectedType(item)}
-                    style={[
-                      styles.typeChip,
-                      { backgroundColor: soft, borderColor: selected ? accent : soft },
-                      selected && styles.typeChipActive
-                    ]}
-                  >
-                    <Text style={styles.typeEmoji}>{item.emoji}</Text>
-                    <Text style={[styles.typeText, { color: accent }]}>{item.label}</Text>
-                  </Pressable>
+                    label={item.label}
+                    onPress={() => {
+                      setSelectedType(item);
+                      setSelectedSubcategory(eventSubcategories[item.category][0]);
+                    }}
+                    selected={selected}
+                    soft={soft}
+                  />
                 );
               })}
             </View>
 
-            <Field label="Titolo *">
+            <Text style={styles.sectionLabel}>SOTTOCATEGORIA</Text>
+            <View style={styles.subcategoryGrid}>
+              {selectedSubcategories.map((item) => {
+                const selected = item === selectedSubcategory;
+                return (
+                  <PillButton
+                    accent={selected ? createPrimary : colors.ink}
+                    accessibilityLabel={`Seleziona sottocategoria ${item}`}
+                    key={item}
+                    label={item}
+                    onPress={() => setSelectedSubcategory(item)}
+                    selected={selected}
+                    soft={selected ? createPrimarySoft : colors.surfaceMuted}
+                  />
+                );
+              })}
+            </View>
+
+            <Field error={fieldErrors.title} label="Titolo *">
               <TextInput
-                onChangeText={setTitle}
-                placeholder="Es. Calcetto 5v5 - cercasi 3"
+                onChangeText={(value) => {
+                  setTitle(value);
+                  clearFieldError("title");
+                }}
+                placeholder={`Es. ${selectedSubcategory} - cercasi 3`}
                 placeholderTextColor={colors.muted}
                 style={styles.input}
                 value={title}
               />
             </Field>
 
-            <Field label="Descrizione">
+            <Field error={fieldErrors.description} label="Descrizione">
               <TextInput
                 multiline
-                onChangeText={setDescription}
+                onChangeText={(value) => {
+                  setDescription(value);
+                  clearFieldError("description");
+                }}
                 placeholder="Di cosa si tratta..."
                 placeholderTextColor={colors.muted}
                 style={[styles.input, styles.textArea]}
@@ -219,7 +471,7 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
 
         {step === 1 && (
           <View style={styles.panel}>
-            <Field label="Luogo *">
+            <Field error={fieldErrors.place} label="Luogo *">
               <View style={styles.autocompleteWrap}>
                 <View style={styles.placeInputWrap}>
                   <TextInput
@@ -239,6 +491,8 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
                   <View style={styles.suggestionList}>
                     {filteredPlaceSuggestions.map((suggestion) => (
                       <Pressable
+                        accessibilityLabel={`Seleziona luogo ${suggestion.name}, ${suggestion.address}`}
+                        accessibilityRole="button"
                         key={`${suggestion.name}-${suggestion.address}`}
                         onPress={() => choosePlace(suggestion)}
                         style={styles.suggestionRow}
@@ -257,12 +511,29 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
                     ))}
                   </View>
                 )}
+
+                {placeSuggestionsOpen && placeSearching && filteredPlaceSuggestions.length === 0 && (
+                  <View style={styles.suggestionList}>
+                    <View style={styles.suggestionRow}>
+                      <View style={styles.suggestionIcon}>
+                        <Ionicons color={colors.ink} name="globe-outline" size={18} />
+                      </View>
+                      <View style={styles.suggestionCopy}>
+                        <Text style={styles.suggestionTitle}>Cerco luoghi in tutto il mondo...</Text>
+                        <Text style={styles.suggestionMeta}>OpenStreetMap</Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
               </View>
             </Field>
 
-            <Field label="Indirizzo">
+            <Field error={fieldErrors.address} label="Indirizzo">
               <TextInput
-                onChangeText={setAddress}
+                onChangeText={(value) => {
+                  setAddress(value);
+                  clearFieldError("address");
+                }}
                 placeholder="Via, civico, citta..."
                 placeholderTextColor={colors.muted}
                 style={styles.input}
@@ -271,47 +542,56 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
             </Field>
 
             <View style={styles.inlineFields}>
-              <Field compact label="Data *">
-                <View style={styles.iconInput}>
-                  <TextInput
-                    onChangeText={setDate}
-                    placeholder="dd/mm/yyyy"
-                    placeholderTextColor={colors.muted}
-                    style={styles.inlineInput}
-                    value={date}
-                  />
-                  <Ionicons color={colors.ink} name="calendar-outline" size={20} />
-                </View>
+              <Field compact error={fieldErrors.date} label="Data *">
+                <DateTimePickerField
+                  minimumDate={minimumEventDate}
+                  mode="date"
+                  onChange={(value) => {
+                    setDate(value);
+                    clearFieldError("date");
+                    clearFieldError("time");
+                  }}
+                  placeholder="Seleziona"
+                  value={date}
+                />
               </Field>
-              <Field compact label="Orario *">
-                <View style={styles.iconInput}>
-                  <TextInput
-                    onChangeText={setTime}
-                    placeholder="--:--"
-                    placeholderTextColor={colors.muted}
-                    style={styles.inlineInput}
-                    value={time}
-                  />
-                  <Ionicons color={colors.ink} name="time-outline" size={20} />
-                </View>
+              <Field compact error={fieldErrors.time} label="Orario *">
+                <DateTimePickerField
+                  mode="time"
+                  onChange={(value) => {
+                    setTime(value);
+                    clearFieldError("time");
+                  }}
+                  placeholder="--:--"
+                  value={time}
+                />
               </Field>
             </View>
+            {eventIsInPast && (
+              <Text style={styles.warningText}>Scegli una data e un orario non antecedenti a oggi.</Text>
+            )}
 
             <View style={styles.inlineFields}>
-              <Field compact label="Posti max">
+              <Field compact error={fieldErrors.capacity} label="Posti max">
                 <TextInput
                   keyboardType="number-pad"
-                  onChangeText={setCapacity}
+                  onChangeText={(value) => {
+                    setCapacity(value);
+                    clearFieldError("capacity");
+                  }}
                   placeholder="Illimitati"
                   placeholderTextColor={colors.muted}
                   style={styles.input}
                   value={capacity}
                 />
               </Field>
-              <Field compact label="Costo (EUR)">
+              <Field compact error={fieldErrors.price} label="Costo (EUR)">
                 <TextInput
                   keyboardType="decimal-pad"
-                  onChangeText={setPrice}
+                  onChangeText={(value) => {
+                    setPrice(value);
+                    clearFieldError("price");
+                  }}
                   placeholder="0 = gratis"
                   placeholderTextColor={colors.muted}
                   style={styles.input}
@@ -344,9 +624,7 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
           <View style={styles.reviewStack}>
             <View style={[styles.previewCard, { backgroundColor: selectedSoft }]}>
               <Text style={styles.previewEmoji}>{selectedType.emoji}</Text>
-              <View style={[styles.previewBadge, { borderColor: selectedAccent }]}>
-                <Text style={[styles.previewBadgeText, { color: selectedAccent }]}>{selectedType.label}</Text>
-              </View>
+              <PillButton accent={selectedAccent} label={selectedSubcategory} soft={colors.surface} />
               <Text style={styles.previewTitle}>{title || "Titolo evento"}</Text>
               <Text style={styles.previewMeta}>
                 {place || "Luogo"} · {priceLabel}
@@ -354,7 +632,7 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
             </View>
 
             <View style={styles.summaryCard}>
-              <SummaryRow label="Categoria" value={`${selectedType.label} ${selectedType.emoji}`} />
+              <SummaryRow label="Tipo evento" value={`${selectedSubcategory} ${selectedType.emoji}`} />
               <SummaryRow label="Data" value={date || "-"} />
               <SummaryRow label="Orario" value={time || "-"} />
               <SummaryRow label="Luogo" value={place || "-"} />
@@ -368,9 +646,10 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
 
       <View style={styles.bottomAction}>
         <Pressable
-          disabled={!canGoNext}
+          accessibilityLabel={step === 2 ? "Pubblica evento" : "Vai al passaggio successivo"}
+          accessibilityRole="button"
           onPress={goNext}
-          style={[styles.primaryButton, !canGoNext && styles.disabledPrimary]}
+          style={styles.primaryButton}
         >
           <Text style={styles.primaryText}>{step === 2 ? "✓ Pubblica evento" : "Avanti →"}</Text>
         </Pressable>
@@ -382,14 +661,16 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
 type FieldProps = {
   children: ReactNode;
   compact?: boolean;
+  error?: string;
   label: string;
 };
 
-function Field({ children, compact = false, label }: FieldProps) {
+function Field({ children, compact = false, error, label }: FieldProps) {
   return (
     <View style={[styles.fieldGroup, compact && styles.inlineField]}>
       <Text style={styles.label}>{label}</Text>
       {children}
+      {error ? <Text style={styles.fieldErrorText}>{error}</Text> : null}
     </View>
   );
 }
@@ -404,7 +685,13 @@ type ChatChoiceProps = {
 
 function ChatChoice({ active, icon, onPress, subtitle, title }: ChatChoiceProps) {
   return (
-    <Pressable onPress={onPress} style={[styles.chatChoice, active && styles.chatChoiceActive]}>
+    <Pressable
+      accessibilityLabel={`Seleziona ${title}`}
+      accessibilityRole="button"
+      accessibilityState={{ selected: active }}
+      onPress={onPress}
+      style={[styles.chatChoice, active && styles.chatChoiceActive]}
+    >
       <View style={[styles.chatAccent, active && styles.chatAccentActive]} />
       <View style={styles.chatCopy}>
         <Text style={styles.chatTitle}>
@@ -489,6 +776,17 @@ const styles = StyleSheet.create({
     backgroundColor: createPrimary,
     width: 36
   },
+  formErrorText: {
+    backgroundColor: colors.roseSoft,
+    borderColor: "#F3B7B7",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 18,
+    padding: spacing.sm
+  },
   panel: {
     gap: spacing.lg
   },
@@ -503,30 +801,20 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.md
   },
-  typeChip: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: 28,
-    borderWidth: 1,
+  subcategoryGrid: {
     flexDirection: "row",
-    gap: 6,
-    minHeight: 54,
-    paddingHorizontal: spacing.lg,
-    ...shadow
-  },
-  typeChipActive: {
-    borderWidth: 1
-  },
-  typeEmoji: {
-    fontSize: 16
-  },
-  typeText: {
-    fontSize: 16,
-    fontWeight: "900"
+    flexWrap: "wrap",
+    gap: spacing.sm,
+    marginTop: -spacing.sm
   },
   fieldGroup: {
     gap: spacing.sm
+  },
+  fieldErrorText: {
+    color: colors.danger,
+    fontSize: 12,
+    fontWeight: "800",
+    lineHeight: 16
   },
   inlineFields: {
     flexDirection: "row",
@@ -640,6 +928,12 @@ const styles = StyleSheet.create({
     fontSize: 18,
     minHeight: 58
   },
+  warningText: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: "800",
+    marginTop: -spacing.sm
+  },
   chatChoice: {
     backgroundColor: colors.surface,
     borderColor: colors.line,
@@ -688,17 +982,6 @@ const styles = StyleSheet.create({
   },
   previewEmoji: {
     fontSize: 52
-  },
-  previewBadge: {
-    backgroundColor: "rgba(255,255,255,0.35)",
-    borderRadius: 18,
-    borderWidth: 1,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 4
-  },
-  previewBadgeText: {
-    fontSize: 15,
-    fontWeight: "900"
   },
   previewTitle: {
     color: colors.ink,

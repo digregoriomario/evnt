@@ -33,14 +33,25 @@ export type EvntEvent = {
     latitude: number;
     longitude: number;
   };
+  dateTimeIso?: string;
   status?: "live" | "trending";
+  subcategory?: string;
 };
 
+export type Coordinates = {
+  latitude: number;
+  longitude: number;
+};
+
+export type LocationStatus = "loading" | "granted" | "denied" | "unavailable";
+
 export type UserProfile = {
+  id?: number;
   avatar?: string;
   name: string;
   email: string;
   city: string;
+  cityCoordinates?: Coordinates;
   birthDate: string;
   bio: string;
   interests: Category[];

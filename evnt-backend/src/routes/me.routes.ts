@@ -19,7 +19,10 @@ const updateSchema = z.object({
   name: z.string().min(1).optional(),
   bio: z.string().optional(),
   city: z.string().optional(),
-  image: z.string().url().optional(),
+  image: z.string().refine(
+    (value) => z.string().url().safeParse(value).success || /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(value),
+    "Invalid image"
+  ).optional(),
   interests: z.array(z.string()).optional()
 });
 

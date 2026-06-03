@@ -1,23 +1,85 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import L, {
+  type Circle as LeafletCircle,
+  type LatLngExpression,
+  type Map as LeafletMap,
+  type Marker as LeafletMarker
+} from "leaflet";
+import "leaflet/dist/leaflet.css";
+import { createElement, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Modal, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 
-import { CategoryChip } from "../components/CategoryChip";
-import { categories, categoryColors, categoryEmojis, categorySoftColors } from "../data/events";
+import { LocationFallbackBanner } from "../components/LocationFallbackBanner";
+import { MapFiltersModal, MapFiltersSheet, type PriceFilter } from "../components/MapFiltersModal";
+import { PillButton } from "../components/PillButton";
+import { cityMatches, findCitySuggestion } from "../data/cities";
+import { categoryColors, categoryEmojis, categorySoftColors, getEventSubcategoryLabel } from "../data/events";
 import { colors, radius, shadow, spacing } from "../theme";
-import { Category, EvntEvent } from "../types";
+import { Category, Coordinates, EvntEvent, LocationStatus, UserProfile } from "../types";
 
 type MapScreenProps = {
   events: EvntEvent[];
   favorites: Set<string>;
+  locationStatus: LocationStatus;
   registrations: Set<string>;
+  user: UserProfile;
+  userCoordinates: Coordinates | null;
   onOpenEvent: (event: EvntEvent) => void;
+  onRequestLocation: () => Promise<Coordinates | null>;
   onToggleFavorite: (eventId: string) => void;
 };
 
 type RadiusOption = 1 | 3 | 5 | 10 | 25;
 
+type Point = {
+  x: number;
+  y: number;
+};
+
+type WebLeafletMapProps = {
+  activeFilterCount: number;
+  eventDistances: Record<string, number>;
+  events: EvntEvent[];
+  favorites: Set<string>;
+  fullscreen?: boolean;
+  hasDeviceLocation: boolean;
+  onClose?: () => void;
+  onExpand?: () => void;
+  onFilter?: () => void;
+  onLocate?: () => void;
+  onOpenEvent: (event: EvntEvent) => void;
+  onSelectEvent: (event: EvntEvent) => void;
+  onToggleFavorite: (eventId: string) => void;
+  radiusCenter: Coordinates;
+  radiusKm: number;
+  registrations: Set<string>;
+  selectedEvent?: EvntEvent;
+};
+
+type PoiPreviewCardProps = {
+  distanceKm: number;
+  event: EvntEvent;
+  favorite: boolean;
+  registered: boolean;
+  onOpen: () => void;
+  onToggleFavorite: () => void;
+  style?: StyleProp<ViewStyle>;
+};
+
 const radiusOptions: RadiusOption[] = [1, 3, 5, 10, 25];
+const defaultCoordinates: Coordinates = { latitude: 40.6815, longitude: 14.761 };
+const leafletContainerStyle: CSSProperties = {
+  bottom: 0,
+  left: 0,
+  position: "absolute",
+  right: 0,
+  top: 0,
+  width: "100%"
+};
+
+function toLatLng(coords: Coordinates): LatLngExpression {
+  return [coords.latitude, coords.longitude];
+}
 
 function formatPrice(price: number) {
   return price === 0 ? "Gratis" : `EUR ${price}`;
@@ -27,190 +89,600 @@ function formatSeats(event: EvntEvent) {
   return event.capacity ? `${event.participants}/${event.capacity} posti` : "Posti illimitati";
 }
 
-function pinPosition(event: EvntEvent) {
-  const latitude = event.coordinates.latitude;
-  const longitude = event.coordinates.longitude;
-  const left = Math.max(10, Math.min(88, 50 + (longitude - 14.761) * 900));
-  const top = Math.max(10, Math.min(82, 52 - (latitude - 40.6815) * 900));
-  return { left: `${left}%` as const, top: `${top}%` as const };
+function zoomFromRadius(radiusKm: number) {
+  if (radiusKm <= 1) return 15;
+  if (radiusKm <= 3) return 14;
+  if (radiusKm <= 5) return 13;
+  if (radiusKm <= 10) return 12;
+  return 11;
+}
+
+function distanceBetweenKm(from: Coordinates, to: Coordinates) {
+  const earthRadiusKm = 6371;
+  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
+  const deltaLatitude = toRadians(to.latitude - from.latitude);
+  const deltaLongitude = toRadians(to.longitude - from.longitude);
+  const fromLatitude = toRadians(from.latitude);
+  const toLatitude = toRadians(to.latitude);
+  const halfChord =
+    Math.sin(deltaLatitude / 2) ** 2 +
+    Math.cos(fromLatitude) * Math.cos(toLatitude) * Math.sin(deltaLongitude / 2) ** 2;
+
+  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(halfChord), Math.sqrt(1 - halfChord));
+}
+
+function createEventIcon(event: EvntEvent, selected: boolean) {
+  const size = selected ? 42 : 36;
+  const accent = categoryColors[event.category];
+  const soft = categorySoftColors[event.category];
+  const emoji = categoryEmojis[event.category];
+
+  return L.divIcon({
+    className: "evnt-leaflet-marker",
+    html: `<div style="
+      align-items:center;
+      background:${soft};
+      border:2px solid ${accent};
+      border-radius:999px;
+      box-shadow:0 8px 18px rgba(17,24,39,0.20);
+      display:flex;
+      height:${size}px;
+      justify-content:center;
+      line-height:${size}px;
+      width:${size}px;
+    "><span style="font-size:18px;line-height:1">${emoji}</span></div>`,
+    iconAnchor: [size / 2, size / 2],
+    iconSize: [size, size]
+  });
+}
+
+function createUserIcon() {
+  return L.divIcon({
+    className: "evnt-leaflet-user-marker",
+    html: `<div style="
+      align-items:center;
+      background:${colors.ink};
+      border:3px solid ${colors.surface};
+      border-radius:999px;
+      box-shadow:0 8px 18px rgba(17,24,39,0.20);
+      color:${colors.surface};
+      display:flex;
+      font-size:15px;
+      height:36px;
+      justify-content:center;
+      line-height:1;
+      width:36px;
+    ">➤</div>`,
+    iconAnchor: [18, 18],
+    iconSize: [36, 36]
+  });
+}
+
+function cardPosition(point: Point, frameWidth: number, frameHeight: number): ViewStyle {
+  const cardWidth = 236;
+  const estimatedCardHeight = 158;
+  const horizontalGap = 12;
+  const verticalGap = 12;
+  const wantsLeft = point.x > frameWidth - cardWidth - 28;
+  const wantsAbove = point.y > frameHeight - estimatedCardHeight - 28;
+  const rawLeft = wantsLeft ? point.x - cardWidth - horizontalGap : point.x + horizontalGap;
+  const rawTop = wantsAbove ? point.y - estimatedCardHeight - verticalGap : point.y + verticalGap;
+
+  return {
+    left: Math.max(8, Math.min(frameWidth - cardWidth - 8, rawLeft)),
+    top: Math.max(8, Math.min(frameHeight - estimatedCardHeight - 8, rawTop))
+  };
 }
 
 export function MapScreen({
   events,
   favorites,
+  locationStatus,
   registrations,
+  user,
+  userCoordinates,
   onOpenEvent,
+  onRequestLocation,
   onToggleFavorite
 }: MapScreenProps) {
   const [category, setCategory] = useState<Category | "Tutti">("Tutti");
+  const [price, setPrice] = useState<PriceFilter>("tutti");
   const [radiusKm, setRadiusKm] = useState<RadiusOption>(10);
   const [selectedEventId, setSelectedEventId] = useState(events[0]?.id);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [fullscreenOpen, setFullscreenOpen] = useState(false);
+
+  const fallbackCoordinates = useMemo(
+    () => user.cityCoordinates ?? findCitySuggestion(user.city)?.coordinates ?? defaultCoordinates,
+    [user.city, user.cityCoordinates]
+  );
+  const hasDeviceLocation = locationStatus === "granted" && userCoordinates !== null;
+  const usesCityFallback = !hasDeviceLocation;
+  const showLocationFallbackNotice = usesCityFallback && locationStatus !== "loading";
+  const radiusCenter = hasDeviceLocation && userCoordinates ? userCoordinates : fallbackCoordinates;
+
+  const eventDistances = useMemo(() => {
+    return events.reduce<Record<string, number>>((distances, event) => {
+      distances[event.id] = distanceBetweenKm(radiusCenter, event.coordinates);
+      return distances;
+    }, {});
+  }, [events, radiusCenter]);
 
   const filteredEvents = useMemo(
     () =>
       events.filter((event) => {
+        const matchesFallbackCity = !usesCityFallback || cityMatches(event.city, user.city);
         const matchesCategory = category === "Tutti" || event.category === category;
-        return matchesCategory && event.distanceKm <= radiusKm;
+        const matchesPrice =
+          price === "tutti" ||
+          (price === "gratis" && event.price === 0) ||
+          (price === "pagamento" && event.price > 0);
+        const distanceKm = eventDistances[event.id] ?? event.distanceKm;
+        return matchesFallbackCity && matchesCategory && matchesPrice && distanceKm <= radiusKm;
       }),
-    [category, events, radiusKm]
+    [category, eventDistances, events, price, radiusKm, user.city, usesCityFallback]
   );
 
   const selectedEvent =
     filteredEvents.find((event) => event.id === selectedEventId) ?? filteredEvents[0];
 
-  const selectEvent = (event: EvntEvent) => {
+  useEffect(() => {
+    if (selectedEventId && filteredEvents.some((event) => event.id === selectedEventId)) {
+      return;
+    }
+
+    setSelectedEventId(filteredEvents[0]?.id);
+  }, [filteredEvents, selectedEventId]);
+
+  const selectEvent = useCallback((event: EvntEvent) => {
     setSelectedEventId(event.id);
+  }, []);
+
+  const updateUserLocation = useCallback(async () => {
+    await onRequestLocation();
+  }, [onRequestLocation]);
+
+  const activeFilterCount =
+    (category === "Tutti" ? 0 : 1) + (price === "tutti" ? 0 : 1) + (radiusKm === 10 ? 0 : 1);
+
+  const locationCopy = {
+    denied: {
+      body: `Permesso posizione mancante: mostriamo gli eventi della citta indicata, ${user.city}.`,
+      icon: "location-outline" as const,
+      title: "Posizione non autorizzata"
+    },
+    granted: {
+      body: userCoordinates ? "La tua posizione e gli eventi sono sulla mappa reale." : "Posizione attiva.",
+      icon: "navigate" as const,
+      title: "Geolocalizzazione attiva"
+    },
+    loading: {
+      body: `Sto recuperando la posizione. Intanto uso ${user.city}.`,
+      icon: "locate-outline" as const,
+      title: "Cerco la tua posizione"
+    },
+    unavailable: {
+      body: `Servizi posizione non disponibili: mostriamo gli eventi della citta indicata, ${user.city}.`,
+      icon: "alert-circle-outline" as const,
+      title: "Posizione non disponibile"
+    }
+  }[locationStatus];
+
+  const clearFilters = () => {
+    setCategory("Tutti");
+    setPrice("tutti");
+    setRadiusKm(10);
+  };
+
+  const closeFullscreen = () => {
+    setFullscreenOpen(false);
+    setFiltersOpen(false);
   };
 
   return (
-    <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Mappa eventi</Text>
-        <Text style={styles.subtitle}>
-          {filteredEvents.length} eventi entro {radiusKm} km
-        </Text>
-      </View>
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroller}>
-        <View style={styles.filterRow}>
-          <Pressable
-            onPress={() => setCategory("Tutti")}
-            style={[styles.allChip, category === "Tutti" && styles.allChipActive]}
-          >
-            <Text style={[styles.allChipText, category === "Tutti" && styles.allChipTextActive]}>
-              Tutti
+    <>
+      <View style={styles.root}>
+        <View style={styles.headerRow}>
+          <View style={styles.headerCopy}>
+            <Text style={styles.title}>Mappa eventi</Text>
+            <Text style={styles.subtitle}>
+              {filteredEvents.length} eventi entro {radiusKm} km
+              {usesCityFallback ? ` a ${user.city}` : ""}
             </Text>
-          </Pressable>
-          {categories.map((item) => (
-            <CategoryChip
-              category={item}
-              key={item}
-              onPress={() => setCategory(item)}
-              selected={category === item}
-            />
-          ))}
-        </View>
-      </ScrollView>
-
-      <View style={styles.radiusSection}>
-        <View style={styles.radiusHeader}>
-          <Text style={styles.radiusTitle}>Raggio d'azione</Text>
-          <Text style={styles.radiusValue}>{radiusKm} km</Text>
-        </View>
-        <View style={styles.radiusOptions}>
-          {radiusOptions.map((option) => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ selected: radiusKm === option }}
-              key={option}
-              onPress={() => setRadiusKm(option)}
-              style={[styles.radiusChip, radiusKm === option && styles.radiusChipActive]}
-            >
-              <Text style={[styles.radiusChipText, radiusKm === option && styles.radiusChipTextActive]}>
-                {option} km
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.mapFrame}>
-        <View style={styles.mapCanvas}>
-          <View style={styles.radiusCircle} />
-          <View style={[styles.road, styles.roadOne]} />
-          <View style={[styles.road, styles.roadTwo]} />
-          <View style={styles.seaBand} />
-          <View style={styles.userPin}>
-            <Ionicons color={colors.surface} name="navigate" size={15} />
           </View>
-
-          {filteredEvents.map((event) => {
-            const isSelected = selectedEvent?.id === event.id;
-            return (
-              <Pressable
-                accessibilityLabel={`Apri anteprima ${event.title}`}
-                key={event.id}
-                onPress={() => selectEvent(event)}
-                style={[
-                  styles.pin,
-                  pinPosition(event),
-                  {
-                    backgroundColor: categoryColors[event.category],
-                    borderColor: categorySoftColors[event.category]
-                  },
-                  isSelected && styles.pinSelected
-                ]}
-              >
-                <Ionicons color={colors.surface} name="location" size={18} />
-              </Pressable>
-            );
-          })}
+          <Pressable
+            accessibilityLabel="Filtri mappa"
+            accessibilityRole="button"
+            onPress={() => setFiltersOpen(true)}
+            style={styles.filterButton}
+          >
+            <Ionicons color={colors.ink} name="options-outline" size={20} />
+            {activeFilterCount > 0 && (
+              <View style={styles.filterBadge}>
+                <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+              </View>
+            )}
+          </Pressable>
         </View>
 
-        {selectedEvent && (
-          <PoiPreviewCard
-            event={selectedEvent}
-            favorite={favorites.has(selectedEvent.id)}
-            onOpen={() => onOpenEvent(selectedEvent)}
-            onToggleFavorite={() => onToggleFavorite(selectedEvent.id)}
-            registered={registrations.has(selectedEvent.id)}
-          />
+        {showLocationFallbackNotice && (
+          <LocationFallbackBanner city={user.city} onRetry={() => void updateUserLocation()} />
         )}
 
+        <WebLeafletMap
+          activeFilterCount={activeFilterCount}
+          eventDistances={eventDistances}
+          events={filteredEvents}
+          favorites={favorites}
+          hasDeviceLocation={hasDeviceLocation}
+          onExpand={() => setFullscreenOpen(true)}
+          onFilter={() => setFiltersOpen(true)}
+          onLocate={() => void updateUserLocation()}
+          onOpenEvent={onOpenEvent}
+          onSelectEvent={selectEvent}
+          onToggleFavorite={onToggleFavorite}
+          radiusCenter={radiusCenter}
+          radiusKm={radiusKm}
+          registrations={registrations}
+          selectedEvent={selectedEvent}
+        />
+
         {filteredEvents.length === 0 && (
-          <View style={styles.emptyOverlay}>
+          <View style={styles.emptyPanel}>
             <View style={styles.emptyIcon}>
               <Ionicons color={colors.ink} name="map-outline" size={22} />
             </View>
-            <Text style={styles.emptyTitle}>Non ce ne sono entro questo raggio</Text>
-            <Text style={styles.emptyText}>
-              Prova ad aumentare il raggio d'azione o a cambiare categoria.
-            </Text>
+            <View style={styles.emptyCopy}>
+              <Text style={styles.emptyTitle}>Non ci sono eventi entro questo raggio</Text>
+              <Text style={styles.emptyText}>
+                Prova ad aumentare il raggio d'azione o a cambiare categoria.
+              </Text>
+            </View>
           </View>
         )}
+
+        <View style={styles.locationPanel}>
+          <View style={styles.locationIcon}>
+            <Ionicons color={colors.ink} name={locationCopy.icon} size={20} />
+          </View>
+          <View style={styles.locationCopy}>
+            <Text style={styles.locationTitle}>{locationCopy.title}</Text>
+            <Text style={styles.locationText}>{locationCopy.body}</Text>
+          </View>
+        </View>
       </View>
 
-      <View style={styles.locationPanel}>
-        <View style={styles.locationIcon}>
-          <Ionicons color={colors.ink} name="globe-outline" size={20} />
+      <Modal animationType="fade" onRequestClose={closeFullscreen} visible={fullscreenOpen}>
+        <View style={styles.fullscreenRoot}>
+          <WebLeafletMap
+            activeFilterCount={activeFilterCount}
+            eventDistances={eventDistances}
+            events={filteredEvents}
+            favorites={favorites}
+            fullscreen
+            hasDeviceLocation={hasDeviceLocation}
+            onClose={closeFullscreen}
+            onFilter={() => setFiltersOpen(true)}
+            onLocate={() => void updateUserLocation()}
+            onOpenEvent={onOpenEvent}
+            onSelectEvent={selectEvent}
+            onToggleFavorite={onToggleFavorite}
+            radiusCenter={radiusCenter}
+            radiusKm={radiusKm}
+            registrations={registrations}
+            selectedEvent={selectedEvent}
+          />
+          {filtersOpen && (
+            <View style={styles.fullscreenFilterOverlay}>
+              <MapFiltersSheet
+                category={category}
+                onCategoryChange={setCategory}
+                onClose={() => setFiltersOpen(false)}
+                onPriceChange={setPrice}
+                onRadiusChange={(value) => setRadiusKm(value as RadiusOption)}
+                onReset={clearFilters}
+                price={price}
+                radiusKm={radiusKm}
+                radiusOptions={radiusOptions}
+              />
+            </View>
+          )}
         </View>
-        <View style={styles.locationCopy}>
-          <Text style={styles.locationTitle}>Anteprima web</Text>
-          <Text style={styles.locationText}>
-            Su iOS e Android questa schermata usa la mappa reale con geolocalizzazione.
-          </Text>
-        </View>
-      </View>
-    </ScrollView>
+      </Modal>
+
+      <MapFiltersModal
+        category={category}
+        onCategoryChange={setCategory}
+        onClose={() => setFiltersOpen(false)}
+        onPriceChange={setPrice}
+        onRadiusChange={(value) => setRadiusKm(value as RadiusOption)}
+        onReset={clearFilters}
+        price={price}
+        radiusKm={radiusKm}
+        radiusOptions={radiusOptions}
+        visible={!fullscreenOpen && filtersOpen}
+      />
+    </>
   );
 }
 
-type PoiPreviewCardProps = {
-  event: EvntEvent;
-  favorite: boolean;
-  registered: boolean;
-  onOpen: () => void;
-  onToggleFavorite: () => void;
-};
+function WebLeafletMap({
+  activeFilterCount,
+  eventDistances,
+  events,
+  favorites,
+  fullscreen = false,
+  hasDeviceLocation,
+  onClose,
+  onExpand,
+  onFilter,
+  onLocate,
+  onOpenEvent,
+  onSelectEvent,
+  onToggleFavorite,
+  radiusCenter,
+  radiusKm,
+  registrations,
+  selectedEvent
+}: WebLeafletMapProps) {
+  const mapElementRef = useRef<HTMLDivElement | null>(null);
+  const mapRef = useRef<LeafletMap | null>(null);
+  const markersRef = useRef<Map<string, LeafletMarker>>(new Map());
+  const radiusCircleRef = useRef<LeafletCircle | null>(null);
+  const userMarkerRef = useRef<LeafletMarker | null>(null);
+  const selectedEventRef = useRef<EvntEvent | undefined>(selectedEvent);
+  const [mapReady, setMapReady] = useState(false);
+  const [mapSize, setMapSize] = useState({ height: fullscreen ? 900 : 620, width: 480 });
+  const [selectedPoint, setSelectedPoint] = useState<Point | null>(null);
+
+  const updateSelectedPoint = useCallback(() => {
+    const map = mapRef.current;
+    const event = selectedEventRef.current;
+    if (!map || !event) {
+      setSelectedPoint(null);
+      return;
+    }
+
+    const point = map.latLngToContainerPoint(toLatLng(event.coordinates));
+    setSelectedPoint({ x: point.x, y: point.y });
+  }, []);
+
+  useEffect(() => {
+    selectedEventRef.current = selectedEvent;
+    updateSelectedPoint();
+  }, [selectedEvent, updateSelectedPoint]);
+
+  useEffect(() => {
+    if (!mapElementRef.current || mapRef.current) {
+      return;
+    }
+
+    const map = L.map(mapElementRef.current, {
+      attributionControl: true,
+      scrollWheelZoom: true,
+      zoomControl: false
+    }).setView(toLatLng(radiusCenter), zoomFromRadius(radiusKm));
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "© OpenStreetMap",
+      maxZoom: 19
+    }).addTo(map);
+
+    map.on("move zoom resize", updateSelectedPoint);
+    mapRef.current = map;
+    setMapReady(true);
+
+    const invalidate = window.setTimeout(() => {
+      map.invalidateSize();
+      updateSelectedPoint();
+    }, 0);
+
+    return () => {
+      window.clearTimeout(invalidate);
+      map.off("move zoom resize", updateSelectedPoint);
+      markersRef.current.forEach((marker) => marker.remove());
+      markersRef.current.clear();
+      radiusCircleRef.current?.remove();
+      userMarkerRef.current?.remove();
+      map.remove();
+      mapRef.current = null;
+    };
+  }, [radiusCenter, radiusKm, updateSelectedPoint]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) {
+      return;
+    }
+
+    radiusCircleRef.current?.remove();
+    radiusCircleRef.current = L.circle(toLatLng(radiusCenter), {
+      color: "rgba(37, 99, 235, 0.35)",
+      fillColor: "rgba(37, 99, 235, 0.10)",
+      fillOpacity: 1,
+      radius: radiusKm * 1000,
+      weight: 2
+    }).addTo(map);
+  }, [mapReady, radiusCenter, radiusKm]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) {
+      return;
+    }
+
+    userMarkerRef.current?.remove();
+    userMarkerRef.current = null;
+
+    if (hasDeviceLocation) {
+      userMarkerRef.current = L.marker(toLatLng(radiusCenter), {
+        icon: createUserIcon(),
+        interactive: false,
+        zIndexOffset: 1000
+      }).addTo(map);
+    }
+  }, [hasDeviceLocation, mapReady, radiusCenter]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) {
+      return;
+    }
+
+    markersRef.current.forEach((marker) => marker.remove());
+    markersRef.current.clear();
+
+    events.forEach((event) => {
+      const marker = L.marker(toLatLng(event.coordinates), {
+        icon: createEventIcon(event, selectedEvent?.id === event.id),
+        title: event.title,
+        zIndexOffset: selectedEvent?.id === event.id ? 500 : 1
+      });
+      marker.on("click", () => onSelectEvent(event));
+      marker.addTo(map);
+      markersRef.current.set(event.id, marker);
+    });
+
+    updateSelectedPoint();
+  }, [events, mapReady, onSelectEvent, selectedEvent?.id, updateSelectedPoint]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) {
+      return;
+    }
+
+    if (events.length > 0) {
+      const boundsCoordinates: LatLngExpression[] = [
+        ...events.map((event) => toLatLng(event.coordinates)),
+        toLatLng(radiusCenter)
+      ];
+      const bounds = L.latLngBounds(boundsCoordinates);
+      map.fitBounds(bounds, {
+        animate: true,
+        maxZoom: 15,
+        paddingBottomRight: [44, 190],
+        paddingTopLeft: [44, 72]
+      });
+    } else {
+      map.setView(toLatLng(radiusCenter), zoomFromRadius(radiusKm), { animate: true });
+    }
+  }, [events, mapReady, radiusCenter, radiusKm]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map || !selectedEvent) {
+      setSelectedPoint(null);
+      return;
+    }
+
+    map.panTo(toLatLng(selectedEvent.coordinates), { animate: true });
+    updateSelectedPoint();
+  }, [mapReady, selectedEvent, updateSelectedPoint]);
+
+  useEffect(() => {
+    const map = mapRef.current;
+    if (!mapReady || !map) {
+      return;
+    }
+
+    map.invalidateSize();
+    updateSelectedPoint();
+  }, [mapReady, mapSize.height, mapSize.width, updateSelectedPoint]);
+
+  const selectedCardStyle =
+    selectedPoint && selectedEvent
+      ? cardPosition(selectedPoint, mapSize.width, mapSize.height)
+      : undefined;
+
+  return (
+    <View
+      onLayout={(event) => setMapSize(event.nativeEvent.layout)}
+      style={fullscreen ? styles.fullscreenMapFrame : styles.mapFrame}
+    >
+      {createElement("div", {
+        ref: (node: HTMLDivElement | null) => {
+          mapElementRef.current = node;
+        },
+        style: leafletContainerStyle
+      })}
+
+      <View style={[styles.mapControlStack, fullscreen && styles.fullscreenMapControlStack]}>
+        <Pressable
+          accessibilityLabel="Filtri mappa"
+          accessibilityRole="button"
+          onPress={onFilter}
+          style={styles.mapControlButton}
+        >
+          <Ionicons color={colors.ink} name="options-outline" size={21} />
+          {activeFilterCount > 0 && (
+            <View style={styles.controlBadge}>
+              <Text style={styles.controlBadgeText}>{activeFilterCount}</Text>
+            </View>
+          )}
+        </Pressable>
+        <Pressable
+          accessibilityLabel="Centra sulla mia posizione"
+          accessibilityRole="button"
+          onPress={onLocate}
+          style={styles.mapControlButton}
+        >
+          <Ionicons color={colors.ink} name="locate-outline" size={21} />
+        </Pressable>
+        {fullscreen ? (
+          <Pressable
+            accessibilityLabel="Chiudi mappa a schermo intero"
+            accessibilityRole="button"
+            onPress={onClose}
+            style={styles.mapControlButton}
+          >
+            <Ionicons color={colors.ink} name="contract-outline" size={22} />
+          </Pressable>
+        ) : (
+          <Pressable
+            accessibilityLabel="Apri mappa a schermo intero"
+            accessibilityRole="button"
+            onPress={onExpand}
+            style={styles.mapControlButton}
+          >
+            <Ionicons color={colors.ink} name="expand-outline" size={21} />
+          </Pressable>
+        )}
+      </View>
+
+      {selectedEvent && selectedCardStyle && (
+        <PoiPreviewCard
+          distanceKm={eventDistances[selectedEvent.id] ?? selectedEvent.distanceKm}
+          event={selectedEvent}
+          favorite={favorites.has(selectedEvent.id)}
+          onOpen={() => onOpenEvent(selectedEvent)}
+          onToggleFavorite={() => onToggleFavorite(selectedEvent.id)}
+          registered={registrations.has(selectedEvent.id)}
+          style={[styles.poiCardFloating, selectedCardStyle]}
+        />
+      )}
+    </View>
+  );
+}
 
 function PoiPreviewCard({
+  distanceKm,
   event,
   favorite,
   registered,
   onOpen,
-  onToggleFavorite
+  onToggleFavorite,
+  style
 }: PoiPreviewCardProps) {
   const accent = categoryColors[event.category];
   const emoji = categoryEmojis[event.category];
   const soft = categorySoftColors[event.category];
+  const categoryLabel = getEventSubcategoryLabel(event);
 
   return (
-    <Pressable accessibilityRole="button" onPress={onOpen} style={styles.poiCard}>
+    <View style={[styles.poiCard, style]}>
       <View style={styles.poiTopRow}>
-        <View style={[styles.poiBadge, { backgroundColor: soft, borderColor: accent }]}>
-          <Text style={styles.poiBadgeEmoji}>{emoji}</Text>
-          <Text style={[styles.poiBadgeText, { color: accent }]}>{event.category}</Text>
-        </View>
+        <PillButton accent={accent} emoji={emoji} label={categoryLabel} soft={soft} />
 
         <Pressable
           accessibilityLabel={favorite ? "Rimuovi dai preferiti" : "Salva nei preferiti"}
@@ -240,7 +712,7 @@ function PoiPreviewCard({
         <View style={styles.poiMetaItem}>
           <Ionicons color={colors.muted} name="location-outline" size={15} />
           <Text numberOfLines={1} style={styles.poiMetaText}>
-            {event.place} · {event.distanceKm.toFixed(1)} km
+            {event.place} · {distanceKm.toFixed(1)} km
           </Text>
         </View>
       </View>
@@ -258,92 +730,197 @@ function PoiPreviewCard({
           )}
         </View>
 
-        <View style={styles.detailButton}>
+        <Pressable accessibilityRole="button" onPress={onOpen} style={styles.detailButton}>
           <Text style={styles.detailButtonText}>Dettagli</Text>
           <Ionicons color={colors.surface} name="arrow-forward" size={15} />
-        </View>
+        </Pressable>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  allChip: {
-    backgroundColor: "#F7F3EA",
-    borderColor: "#F7F3EA",
-    borderRadius: 28,
-    borderWidth: 1,
-    justifyContent: "center",
-    minHeight: 54,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    ...shadow
-  },
-  allChipActive: {
-    backgroundColor: "#F0EEFF",
-    borderColor: "#5A4BC4"
-  },
-  allChipText: {
-    color: colors.ink,
-    fontSize: 16,
-    fontWeight: "900"
-  },
-  allChipTextActive: {
-    color: "#5A4BC4"
-  },
-  container: {
+  root: {
+    flex: 1,
     gap: spacing.lg,
     padding: spacing.lg,
-    paddingBottom: spacing.xxl
+    paddingBottom: spacing.lg
   },
-  detailButton: {
+  headerCopy: {
+    flex: 1,
+    gap: spacing.xs
+  },
+  headerRow: {
     alignItems: "center",
-    backgroundColor: colors.ink,
-    borderRadius: radius.sm,
     flexDirection: "row",
-    gap: spacing.xs,
-    minHeight: 36,
-    paddingHorizontal: spacing.md
+    gap: spacing.md,
+    paddingTop: spacing.sm
   },
-  detailButtonText: {
-    color: colors.surface,
-    fontSize: 13,
+  title: {
+    color: colors.ink,
+    fontSize: 28,
     fontWeight: "900"
   },
-  emptyIcon: {
-    alignItems: "center",
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 22,
-    height: 44,
-    justifyContent: "center",
-    width: 44
+  subtitle: {
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: "700"
   },
-  emptyOverlay: {
+  filterBadge: {
+    alignItems: "center",
+    backgroundColor: colors.teal,
+    borderRadius: 9,
+    height: 18,
+    justifyContent: "center",
+    position: "absolute",
+    right: 7,
+    top: 7,
+    width: 18
+  },
+  filterBadgeText: {
+    color: colors.surface,
+    fontSize: 11,
+    fontWeight: "900"
+  },
+  filterButton: {
     alignItems: "center",
     backgroundColor: colors.surface,
     borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
-    gap: spacing.sm,
-    left: spacing.lg,
-    padding: spacing.lg,
-    position: "absolute",
-    right: spacing.lg,
-    top: 118,
+    height: 52,
+    justifyContent: "center",
+    position: "relative",
+    width: 52
+  },
+  mapFrame: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flex: 1,
+    minHeight: 520,
+    overflow: "hidden",
+    position: "relative",
     ...shadow
   },
-  emptyText: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: "600",
-    lineHeight: 18,
-    textAlign: "center"
+  fullscreenMapFrame: {
+    backgroundColor: colors.surface,
+    flex: 1,
+    overflow: "hidden",
+    position: "relative"
   },
-  emptyTitle: {
-    color: colors.ink,
-    fontSize: 16,
-    fontWeight: "900",
-    textAlign: "center"
+  fullscreenMapControlStack: {
+    top: 64
+  },
+  fullscreenFilterOverlay: {
+    backgroundColor: "rgba(15, 23, 42, 0.32)",
+    bottom: 0,
+    justifyContent: "flex-end",
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 2000
+  },
+  mapControlStack: {
+    gap: spacing.sm,
+    position: "absolute",
+    right: spacing.md,
+    top: spacing.md,
+    zIndex: 1001
+  },
+  mapControlButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 21,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: "center",
+    position: "relative",
+    width: 42,
+    ...shadow
+  },
+  controlBadge: {
+    alignItems: "center",
+    backgroundColor: colors.teal,
+    borderRadius: 8,
+    height: 16,
+    justifyContent: "center",
+    position: "absolute",
+    right: -2,
+    top: -2,
+    width: 16
+  },
+  controlBadgeText: {
+    color: colors.surface,
+    fontSize: 10,
+    fontWeight: "900"
+  },
+  locateButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 21,
+    borderWidth: 1,
+    height: 42,
+    justifyContent: "center",
+    width: 42,
+    ...shadow
+  },
+  expandButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 21,
+    borderWidth: 1,
+    bottom: spacing.md,
+    height: 42,
+    justifyContent: "center",
+    position: "absolute",
+    right: spacing.md,
+    width: 42,
+    zIndex: 1000,
+    ...shadow
+  },
+  fullscreenClose: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 22,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: "center",
+    position: "absolute",
+    right: spacing.lg,
+    top: spacing.xl,
+    width: 44,
+    zIndex: 1001,
+    ...shadow
+  },
+  fullscreenRoot: {
+    backgroundColor: colors.background,
+    flex: 1
+  },
+  poiCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: spacing.xs,
+    padding: spacing.sm,
+    width: 236,
+    ...shadow
+  },
+  poiCardFloating: {
+    position: "absolute",
+    zIndex: 1002
+  },
+  poiTopRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between"
   },
   favoriteButton: {
     alignItems: "center",
@@ -351,126 +928,11 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 32
   },
-  filterRow: {
-    flexDirection: "row",
-    gap: spacing.sm,
-    paddingRight: spacing.xl
-  },
-  filterScroller: {
-    marginHorizontal: -spacing.lg,
-    paddingHorizontal: spacing.lg
-  },
-  header: {
-    gap: spacing.xs,
-    paddingTop: spacing.sm
-  },
-  locationCopy: {
-    flex: 1,
-    gap: 2
-  },
-  locationIcon: {
-    alignItems: "center",
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.md,
-    height: 44,
-    justifyContent: "center",
-    width: 44
-  },
-  locationPanel: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.md,
-    padding: spacing.md
-  },
-  locationText: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: "600",
-    lineHeight: 18
-  },
-  locationTitle: {
+  poiTitle: {
     color: colors.ink,
     fontSize: 15,
-    fontWeight: "900"
-  },
-  mapCanvas: {
-    backgroundColor: "#EAF4E5",
-    flex: 1,
-    overflow: "hidden",
-    position: "relative"
-  },
-  mapFrame: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    height: 460,
-    overflow: "hidden",
-    position: "relative",
-    ...shadow
-  },
-  pin: {
-    alignItems: "center",
-    borderRadius: 18,
-    borderWidth: 4,
-    height: 36,
-    justifyContent: "center",
-    marginLeft: -18,
-    marginTop: -18,
-    position: "absolute",
-    width: 36,
-    ...shadow
-  },
-  pinSelected: {
-    transform: [{ scale: 1.14 }]
-  },
-  poiBadge: {
-    alignItems: "center",
-    borderRadius: 18,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 5,
-    minHeight: 36,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 5
-  },
-  poiBadgeEmoji: {
-    fontSize: 13
-  },
-  poiBadgeText: {
-    fontSize: 12,
-    fontWeight: "900"
-  },
-  poiCard: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    bottom: spacing.md,
-    gap: spacing.sm,
-    left: spacing.md,
-    padding: spacing.md,
-    position: "absolute",
-    right: spacing.md,
-    ...shadow
-  },
-  poiDot: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: "900"
-  },
-  poiFooter: {
-    alignItems: "center",
-    borderTopColor: colors.line,
-    borderTopWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    justifyContent: "space-between",
-    paddingTop: spacing.sm
+    fontWeight: "900",
+    lineHeight: 18
   },
   poiMetaGrid: {
     gap: spacing.xs
@@ -483,13 +945,17 @@ const styles = StyleSheet.create({
   poiMetaText: {
     color: colors.muted,
     flex: 1,
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: "700"
   },
-  poiStatText: {
-    color: colors.ink,
-    fontSize: 12,
-    fontWeight: "900"
+  poiFooter: {
+    alignItems: "center",
+    borderTopColor: colors.line,
+    borderTopWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    justifyContent: "space-between",
+    paddingTop: spacing.sm
   },
   poiStats: {
     alignItems: "center",
@@ -498,133 +964,101 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.xs
   },
-  poiTitle: {
+  poiStatText: {
     color: colors.ink,
-    fontSize: 18,
-    fontWeight: "900",
-    lineHeight: 22
+    fontSize: 11,
+    fontWeight: "900"
   },
-  poiTopRow: {
+  poiDot: {
+    color: colors.muted,
+    fontSize: 11,
+    fontWeight: "900"
+  },
+  registeredText: {
+    color: colors.teal,
+    fontSize: 11,
+    fontWeight: "900"
+  },
+  detailButton: {
     alignItems: "center",
+    backgroundColor: colors.ink,
+    borderRadius: radius.sm,
     flexDirection: "row",
-    justifyContent: "space-between"
+    gap: spacing.xs,
+    minHeight: 32,
+    paddingHorizontal: spacing.sm
   },
-  radiusChip: {
-    alignItems: "center",
-    backgroundColor: "#EEF5FF",
-    borderColor: "#EEF5FF",
-    borderRadius: 28,
-    borderWidth: 1,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 44
-  },
-  radiusChipActive: {
-    backgroundColor: "#F0EEFF",
-    borderColor: "#5A4BC4"
-  },
-  radiusChipText: {
-    color: colors.ink,
+  detailButtonText: {
+    color: colors.surface,
     fontSize: 12,
     fontWeight: "900"
   },
-  radiusChipTextActive: {
-    color: "#5A4BC4"
-  },
-  radiusCircle: {
-    borderColor: "rgba(37, 99, 235, 0.35)",
-    borderRadius: 130,
-    borderWidth: 2,
-    height: 260,
-    left: "50%",
-    marginLeft: -130,
-    marginTop: -130,
-    position: "absolute",
-    top: "50%",
-    width: 260
-  },
-  radiusHeader: {
+  emptyPanel: {
     alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between"
-  },
-  radiusOptions: {
-    flexDirection: "row",
-    gap: spacing.sm
-  },
-  radiusSection: {
     backgroundColor: colors.surface,
     borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
+    flexDirection: "row",
     gap: spacing.md,
     padding: spacing.md
   },
-  radiusTitle: {
+  emptyIcon: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 22,
+    height: 44,
+    justifyContent: "center",
+    width: 44
+  },
+  emptyCopy: {
+    flex: 1,
+    gap: 2
+  },
+  emptyTitle: {
+    color: colors.ink,
+    fontSize: 16,
+    fontWeight: "900",
+    textAlign: "center"
+  },
+  emptyText: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "600",
+    lineHeight: 18,
+    textAlign: "center"
+  },
+  locationPanel: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    padding: spacing.md
+  },
+  locationIcon: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    height: 44,
+    justifyContent: "center",
+    width: 44
+  },
+  locationCopy: {
+    flex: 1,
+    gap: 2
+  },
+  locationTitle: {
     color: colors.ink,
     fontSize: 15,
     fontWeight: "900"
   },
-  radiusValue: {
+  locationText: {
     color: colors.muted,
     fontSize: 13,
-    fontWeight: "800"
-  },
-  registeredText: {
-    color: colors.teal,
-    fontSize: 12,
-    fontWeight: "900"
-  },
-  road: {
-    backgroundColor: "#FFF9ED",
-    borderColor: "#DCCFBA",
-    borderWidth: 1,
-    height: 28,
-    position: "absolute",
-    width: 520
-  },
-  roadOne: {
-    left: -90,
-    top: 130,
-    transform: [{ rotate: "-22deg" }]
-  },
-  roadTwo: {
-    left: -70,
-    top: 220,
-    transform: [{ rotate: "18deg" }]
-  },
-  seaBand: {
-    backgroundColor: "#BFDCEB",
-    bottom: -50,
-    height: 140,
-    left: -40,
-    position: "absolute",
-    right: -40,
-    transform: [{ rotate: "-7deg" }]
-  },
-  subtitle: {
-    color: colors.muted,
-    fontSize: 14,
-    fontWeight: "700"
-  },
-  title: {
-    color: colors.ink,
-    fontSize: 28,
-    fontWeight: "900"
-  },
-  userPin: {
-    alignItems: "center",
-    backgroundColor: colors.ink,
-    borderColor: colors.surface,
-    borderRadius: 18,
-    borderWidth: 3,
-    height: 36,
-    justifyContent: "center",
-    left: "50%",
-    marginLeft: -18,
-    marginTop: -18,
-    position: "absolute",
-    top: "50%",
-    width: 36
+    fontWeight: "600",
+    lineHeight: 18
   }
 });

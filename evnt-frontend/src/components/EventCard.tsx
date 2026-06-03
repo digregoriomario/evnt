@@ -1,9 +1,16 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { categoryColors, categoryEmojis, categorySoftColors } from "../data/events";
+import {
+  categoryColors,
+  categoryDefaultImages,
+  categoryEmojis,
+  categorySoftColors,
+  getEventSubcategoryLabel
+} from "../data/events";
 import { colors, radius, shadow, spacing } from "../theme";
 import { EvntEvent } from "../types";
+import { PillButton } from "./PillButton";
 
 type EventCardProps = {
   event: EvntEvent;
@@ -25,21 +32,23 @@ export function EventCard({
   const accent = categoryColors[event.category];
   const emoji = categoryEmojis[event.category];
   const soft = categorySoftColors[event.category];
+  const imageUri = event.image || categoryDefaultImages[event.category];
+  const categoryLabel = getEventSubcategoryLabel(event);
   const seatsLabel = event.capacity
     ? `${event.participants}/${event.capacity}`
     : `${event.participants}+`;
 
   return (
-    <Pressable accessibilityRole="button" onPress={onPress} style={[styles.card, compact && styles.compactCard]}>
-      <Image source={{ uri: event.image }} style={[styles.image, compact && styles.compactImage]} />
+    <View style={[styles.card, compact && styles.compactCard]}>
+      <Pressable accessibilityLabel={`Apri evento ${event.title}`} accessibilityRole="button" onPress={onPress}>
+        <Image source={{ uri: imageUri }} style={[styles.image, compact && styles.compactImage]} />
+      </Pressable>
       <View style={styles.content}>
         <View style={styles.topLine}>
-          <View style={[styles.badge, { backgroundColor: soft, borderColor: accent }]}>
-            <Text style={styles.badgeEmoji}>{emoji}</Text>
-            <Text style={[styles.badgeLabel, { color: accent }]}>{event.category}</Text>
-          </View>
+          <PillButton accent={accent} emoji={emoji} label={categoryLabel} soft={soft} />
           <Pressable
             accessibilityLabel={favorite ? "Rimuovi dai preferiti" : "Salva nei preferiti"}
+            accessibilityRole="button"
             onPress={onToggleFavorite}
             style={styles.iconButton}
           >
@@ -51,42 +60,49 @@ export function EventCard({
           </Pressable>
         </View>
 
-        <Text numberOfLines={2} style={styles.title}>
-          {event.title}
-        </Text>
-
-        <View style={styles.metaRow}>
-          <Feather color={colors.muted} name="calendar" size={14} />
-          <Text style={styles.metaText}>
-            {event.date} · {event.time}
+        <Pressable
+          accessibilityLabel={`Apri evento ${event.title}`}
+          accessibilityRole="button"
+          onPress={onPress}
+          style={styles.cardPressArea}
+        >
+          <Text numberOfLines={2} style={styles.title}>
+            {event.title}
           </Text>
-        </View>
-        <View style={styles.metaRow}>
-          <Feather color={colors.muted} name="map-pin" size={14} />
-          <Text numberOfLines={1} style={styles.metaText}>
-            {event.place} · {event.distanceKm.toFixed(1)} km
-          </Text>
-        </View>
 
-        {!compact && (
-          <View style={styles.footer}>
-            <View style={styles.metric}>
-              <Text style={styles.metricValue}>{event.affinity}%</Text>
-              <Text style={styles.metricLabel}>affinita</Text>
-            </View>
-            <View style={styles.metric}>
-              <Text style={styles.metricValue}>{seatsLabel}</Text>
-              <Text style={styles.metricLabel}>posti</Text>
-            </View>
-            <View style={[styles.pricePill, registered && styles.registeredPill]}>
-              <Text style={[styles.priceLabel, registered && styles.registeredLabel]}>
-                {registered ? "Iscritto" : event.price === 0 ? "Gratis" : `EUR ${event.price}`}
-              </Text>
-            </View>
+          <View style={styles.metaRow}>
+            <Feather color={colors.muted} name="calendar" size={14} />
+            <Text style={styles.metaText}>
+              {event.date} · {event.time}
+            </Text>
           </View>
-        )}
+          <View style={styles.metaRow}>
+            <Feather color={colors.muted} name="map-pin" size={14} />
+            <Text numberOfLines={1} style={styles.metaText}>
+              {event.place} · {event.distanceKm.toFixed(1)} km
+            </Text>
+          </View>
+
+          {!compact && (
+            <View style={styles.footer}>
+              <View style={styles.metric}>
+                <Text style={styles.metricValue}>{event.affinity}%</Text>
+                <Text style={styles.metricLabel}>affinita</Text>
+              </View>
+              <View style={styles.metric}>
+                <Text style={styles.metricValue}>{seatsLabel}</Text>
+                <Text style={styles.metricLabel}>posti</Text>
+              </View>
+              <View style={[styles.pricePill, registered && styles.registeredPill]}>
+                <Text style={[styles.priceLabel, registered && styles.registeredLabel]}>
+                  {registered ? "Iscritto" : event.price === 0 ? "Gratis" : `EUR ${event.price}`}
+                </Text>
+              </View>
+            </View>
+          )}
+        </Pressable>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
@@ -116,30 +132,15 @@ const styles = StyleSheet.create({
   content: {
     flex: 1,
     gap: spacing.sm,
-    padding: spacing.md
+    padding: spacing.lg
+  },
+  cardPressArea: {
+    gap: spacing.sm
   },
   topLine: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between"
-  },
-  badge: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderRadius: 18,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 5,
-    minHeight: 36,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 5
-  },
-  badgeEmoji: {
-    fontSize: 13
-  },
-  badgeLabel: {
-    fontSize: 12,
-    fontWeight: "900"
   },
   iconButton: {
     alignItems: "center",
@@ -166,13 +167,13 @@ const styles = StyleSheet.create({
   },
   footer: {
     alignItems: "center",
-    borderTopColor: colors.line,
-    borderTopWidth: 1,
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.sm,
     flexDirection: "row",
     gap: spacing.sm,
     justifyContent: "space-between",
     marginTop: spacing.xs,
-    paddingTop: spacing.md
+    padding: spacing.md
   },
   metric: {
     minWidth: 68
@@ -188,10 +189,14 @@ const styles = StyleSheet.create({
     fontWeight: "700"
   },
   pricePill: {
-    backgroundColor: "#F7F3EA",
-    borderColor: "#EFE7D8",
-    borderRadius: 18,
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 22,
     borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 42,
+    minWidth: 88,
     paddingHorizontal: spacing.md,
     paddingVertical: spacing.sm
   },
@@ -201,7 +206,7 @@ const styles = StyleSheet.create({
   },
   priceLabel: {
     color: colors.ink,
-    fontSize: 12,
+    fontSize: 14,
     fontWeight: "900"
   },
   registeredLabel: {

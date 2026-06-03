@@ -1,8 +1,10 @@
 import { StatusBar } from "expo-status-bar";
-import { useMemo, useState } from "react";
-import { Platform, SafeAreaView, StyleSheet, View } from "react-native";
+import * as Location from "expo-location";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { ActivityIndicator, Platform, SafeAreaView, StyleSheet, Text, View } from "react-native";
 
 import { BottomNav } from "./src/components/BottomNav";
+import { ToastBanner, type ToastTone } from "./src/components/ToastBanner";
 import { GluestackUIProvider } from "./src/components/ui";
 import { initialEvents } from "./src/data/events";
 import { AuthScreen, type AuthResult } from "./src/screens/AuthScreen";
@@ -12,14 +14,17 @@ import { HomeScreen } from "./src/screens/HomeScreen";
 import { InboxScreen } from "./src/screens/InboxScreen";
 import { MapScreen } from "./src/screens/MapScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen";
-import { colors } from "./src/theme";
-import { EvntEvent, ScreenKey, UserProfile } from "./src/types";
-import { api, ApiError, isBackendReachable, type ApiEvent } from "./src/api";
+import { clearStoredSession, loadStoredSession, saveStoredSession } from "./src/session";
+import { colors, spacing } from "./src/theme";
+import { Coordinates, EvntEvent, LocationStatus, ScreenKey, UserProfile } from "./src/types";
+import { api, ApiError, getAuthToken, isBackendReachable, setAuthToken, type ApiEvent } from "./src/api";
+import { searchCitiesWorldwide } from "./src/api/geocoding";
 
 const mainScreens: ScreenKey[] = ["home", "map", "create", "inbox", "profile"];
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
+  const [sessionLoading, setSessionLoading] = useState(true);
   const [events, setEvents] = useState<EvntEvent[]>(initialEvents);
   const [screen, setScreen] = useState<ScreenKey>("auth");
   const [previousScreen, setPreviousScreen] = useState<ScreenKey>("home");
@@ -27,6 +32,11 @@ export default function App() {
   const [favorites, setFavorites] = useState<Set<string>>(new Set(["sunset-jam", "street-food"]));
   const [registrations, setRegistrations] = useState<Set<string>>(new Set(["calcetto-lampo"]));
   const [online, setOnline] = useState(false);
+  const [locationStatus, setLocationStatus] = useState<LocationStatus>("loading");
+  const [userCoordinates, setUserCoordinates] = useState<Coordinates | null>(null);
+  const [initialChatEventId, setInitialChatEventId] = useState<string | undefined>();
+  const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const selectedEvent = useMemo(
     () => events.find((event) => event.id === selectedEventId) ?? events[0],
@@ -34,11 +44,34 @@ export default function App() {
   );
 
   const activeMainScreen = mainScreens.includes(screen) ? screen : previousScreen;
-  const showBottomNav = user !== null && mainScreens.includes(screen);
+  const showBottomNav = !sessionLoading && user !== null && mainScreens.includes(screen);
+
+  const showToast = useCallback((message: string, tone: ToastTone = "info") => {
+    if (toastTimerRef.current) {
+      clearTimeout(toastTimerRef.current);
+    }
+
+    setToast({ message, tone });
+    toastTimerRef.current = setTimeout(() => {
+      setToast(null);
+      toastTimerRef.current = null;
+    }, 2800);
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      if (toastTimerRef.current) {
+        clearTimeout(toastTimerRef.current);
+      }
+    };
+  }, []);
 
   const navigate = (nextScreen: ScreenKey) => {
     if (mainScreens.includes(nextScreen)) {
       setPreviousScreen(nextScreen);
+    }
+    if (nextScreen === "inbox") {
+      setInitialChatEventId(undefined);
     }
     setScreen(nextScreen);
   };
@@ -51,12 +84,96 @@ export default function App() {
     setScreen("detail");
   };
 
-  const openInbox = () => {
+  const openInbox = (eventId?: string) => {
+    setInitialChatEventId(eventId);
     if (mainScreens.includes(screen)) {
       setPreviousScreen(screen);
     }
     setScreen("inbox");
   };
+
+  const requestUserLocation = useCallback(async (): Promise<Coordinates | null> => {
+    setLocationStatus("loading");
+
+    try {
+      if (Platform.OS !== "web") {
+        const servicesEnabled = await Location.hasServicesEnabledAsync();
+        if (!servicesEnabled) {
+          setUserCoordinates(null);
+          setLocationStatus("unavailable");
+          return null;
+        }
+      }
+
+      const permission = await Location.requestForegroundPermissionsAsync();
+      if (permission.status !== Location.PermissionStatus.GRANTED) {
+        setUserCoordinates(null);
+        setLocationStatus("denied");
+        return null;
+      }
+
+      const lastKnown = await Location.getLastKnownPositionAsync();
+      if (lastKnown) {
+        const coords = {
+          latitude: lastKnown.coords.latitude,
+          longitude: lastKnown.coords.longitude
+        };
+        setUserCoordinates(coords);
+        setLocationStatus("granted");
+      }
+
+      const current = await Location.getCurrentPositionAsync({
+        accuracy: Location.Accuracy.Balanced
+      });
+      const coords = {
+        latitude: current.coords.latitude,
+        longitude: current.coords.longitude
+      };
+      setUserCoordinates(coords);
+      setLocationStatus("granted");
+      return coords;
+    } catch {
+      setUserCoordinates(null);
+      setLocationStatus("unavailable");
+      return null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!user) {
+      setUserCoordinates(null);
+      setLocationStatus("loading");
+      return;
+    }
+
+    void requestUserLocation();
+  }, [requestUserLocation, user?.email]);
+
+  useEffect(() => {
+    if (!user || user.cityCoordinates || user.city.trim().length < 2) {
+      return;
+    }
+
+    let cancelled = false;
+    searchCitiesWorldwide(user.city)
+      .then((suggestions) => {
+        const [match] = suggestions;
+        if (cancelled || !match) {
+          return;
+        }
+
+        setUser((current) =>
+          current && current.email === user.email && !current.cityCoordinates
+            ? { ...current, cityCoordinates: match.coordinates }
+            : current
+        );
+      })
+      .catch(() => undefined);
+
+    return () => {
+      cancelled = true;
+    };
+  }, [user?.city, user?.cityCoordinates, user?.email]);
 
   const toggleFavorite = (eventId: string) => {
     const willFavorite = !favorites.has(eventId);
@@ -72,10 +189,12 @@ export default function App() {
     if (online) {
       (willFavorite ? api.bookmark(eventId) : api.unbookmark(eventId)).catch(() => undefined);
     }
+    showToast(willFavorite ? "Evento salvato nei preferiti." : "Evento rimosso dai preferiti.", "success");
   };
 
   const toggleRegistration = (eventId: string) => {
     const joining = !registrations.has(eventId);
+    const event = events.find((item) => item.id === eventId);
     setRegistrations((current) => {
       const next = new Set(current);
       if (next.has(eventId)) {
@@ -95,6 +214,12 @@ export default function App() {
     if (online) {
       (joining ? api.join(eventId) : api.leave(eventId)).catch(() => undefined);
     }
+    showToast(
+      joining
+        ? `Iscrizione confermata${event ? `: ${event.title}` : ""}. Chat evento aggiunta.`
+        : "Iscrizione annullata.",
+      joining ? "success" : "warning"
+    );
   };
 
   const createEvent = (event: EvntEvent) => {
@@ -103,12 +228,13 @@ export default function App() {
     setSelectedEventId(event.id);
     setPreviousScreen("create");
     setScreen("detail");
+    showToast("Evento creato e chat evento pronta.", "success");
     if (online) {
       api
         .createEvent({
           title: event.title,
           description: event.description,
-          dateHour: new Date().toISOString(),
+          dateHour: event.dateTimeIso ?? new Date().toISOString(),
           place: event.address || event.place,
           latitude: event.coordinates.latitude,
           longitude: event.coordinates.longitude,
@@ -119,13 +245,30 @@ export default function App() {
           image: event.image || undefined,
           tags: event.tags
         })
+        .then((createdEvent) => {
+          setEvents((current) =>
+            current.map((currentEvent) =>
+              currentEvent.id === event.id ? createdEvent : currentEvent
+            )
+          );
+          setRegistrations((current) => {
+            const next = new Set(current);
+            next.delete(event.id);
+            next.add(createdEvent.id);
+            return next;
+          });
+          setSelectedEventId((current) => (current === event.id ? createdEvent.id : current));
+        })
         .catch(() => undefined);
     }
   };
 
   const logout = () => {
     api.logout();
+    void clearStoredSession();
     setOnline(false);
+    setLocationStatus("loading");
+    setUserCoordinates(null);
     setUser(null);
     setScreen("auth");
     setPreviousScreen("home");
@@ -146,6 +289,78 @@ export default function App() {
     }
   };
 
+  useEffect(() => {
+    let cancelled = false;
+
+    const restoreSession = async () => {
+      try {
+        const session = await loadStoredSession();
+        if (!session) {
+          return;
+        }
+
+        setAuthToken(session.token);
+        if (cancelled) {
+          return;
+        }
+
+        setUser(session.user);
+        setScreen("home");
+        setPreviousScreen("home");
+
+        const reachable = await isBackendReachable();
+        if (cancelled) {
+          return;
+        }
+
+        setOnline(reachable);
+        if (!reachable) {
+          return;
+        }
+
+        try {
+          const currentUser = await api.me();
+          if (cancelled) {
+            return;
+          }
+
+          const restoredUser = { ...session.user, ...currentUser };
+          setUser(restoredUser);
+          await saveStoredSession({ token: session.token, user: restoredUser });
+          await hydrateFromApi();
+        } catch {
+          await clearStoredSession();
+          api.logout();
+          if (!cancelled) {
+            setOnline(false);
+            setUser(null);
+            setScreen("auth");
+            setPreviousScreen("home");
+          }
+        }
+      } finally {
+        if (!cancelled) {
+          setSessionLoading(false);
+        }
+      }
+    };
+
+    void restoreSession();
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
+    const token = getAuthToken();
+    if (!user || !token) {
+      return;
+    }
+
+    void saveStoredSession({ token, user });
+  }, [user]);
+
   // Real auth against the backend: failed login/register keeps the user on auth.
   const handleAuthComplete = async (
     profile: UserProfile,
@@ -155,6 +370,7 @@ export default function App() {
       setUser(profile);
       setScreen("home");
       setPreviousScreen("home");
+      showToast(`Benvenuto, ${profile.name}.`, "success");
       return { ok: true };
     }
 
@@ -181,11 +397,14 @@ export default function App() {
               interests: profile.interests
             })
           : await api.login(profile.email, credentials.password);
-      setUser({ ...profile, ...res.user });
+      const authenticatedUser = { ...profile, ...res.user };
+      setUser(authenticatedUser);
       setOnline(true);
       setScreen("home");
       setPreviousScreen("home");
+      await saveStoredSession({ token: res.token, user: authenticatedUser });
       await hydrateFromApi();
+      showToast(credentials.mode === "signup" ? "Account creato. Benvenuto in Evnt." : "Bentornato su Evnt.", "success");
       return { ok: true };
     } catch (error) {
       setOnline(false);
@@ -198,6 +417,15 @@ export default function App() {
   };
 
   const renderScreen = () => {
+    if (sessionLoading) {
+      return (
+        <View style={styles.loadingScreen}>
+          <Text style={styles.loadingLogo}>Evnt</Text>
+          <ActivityIndicator color={colors.primary} size="small" />
+        </View>
+      );
+    }
+
     if (!user) {
       return (
         <AuthScreen onComplete={handleAuthComplete} />
@@ -210,7 +438,7 @@ export default function App() {
           event={selectedEvent}
           favorite={favorites.has(selectedEvent.id)}
           onBack={() => setScreen(previousScreen)}
-          onOpenInbox={openInbox}
+          onOpenInbox={() => openInbox(selectedEvent.id)}
           onToggleFavorite={() => toggleFavorite(selectedEvent.id)}
           onToggleRegistration={() => toggleRegistration(selectedEvent.id)}
           registered={registrations.has(selectedEvent.id)}
@@ -222,7 +450,11 @@ export default function App() {
       return (
         <InboxScreen
           events={events}
+          initialEventId={initialChatEventId}
+          online={online}
           onOpenEvent={openEvent}
+          registrations={registrations}
+          user={user}
         />
       );
     }
@@ -232,9 +464,13 @@ export default function App() {
         <MapScreen
           events={events}
           favorites={favorites}
+          locationStatus={locationStatus}
           onOpenEvent={openEvent}
+          onRequestLocation={requestUserLocation}
           onToggleFavorite={toggleFavorite}
           registrations={registrations}
+          user={user}
+          userCoordinates={userCoordinates}
         />
       );
     }
@@ -262,10 +498,13 @@ export default function App() {
       <HomeScreen
         events={events}
         favorites={favorites}
+        locationStatus={locationStatus}
         onOpenEvent={openEvent}
+        onRequestLocation={requestUserLocation}
         onToggleFavorite={toggleFavorite}
         registrations={registrations}
         user={user}
+        userCoordinates={userCoordinates}
       />
     );
   };
@@ -277,6 +516,11 @@ export default function App() {
         <View style={styles.appFrame}>
           <View style={styles.content}>{renderScreen()}</View>
           {showBottomNav && <BottomNav active={activeMainScreen} onChange={navigate} />}
+          {toast && (
+            <View pointerEvents="none" style={[styles.toastLayer, showBottomNav && styles.toastLayerWithNav]}>
+              <ToastBanner message={toast.message} tone={toast.tone} />
+            </View>
+          )}
         </View>
       </SafeAreaView>
     </GluestackUIProvider>
@@ -293,9 +537,31 @@ const styles = StyleSheet.create({
     backgroundColor: colors.background,
     flex: 1,
     maxWidth: Platform.OS === "web" ? 480 : undefined,
+    position: "relative",
     width: "100%"
   },
   content: {
     flex: 1
+  },
+  loadingScreen: {
+    alignItems: "center",
+    flex: 1,
+    gap: 14,
+    justifyContent: "center"
+  },
+  loadingLogo: {
+    color: colors.ink,
+    fontSize: 34,
+    fontWeight: "900"
+  },
+  toastLayer: {
+    bottom: spacing.lg,
+    left: spacing.lg,
+    position: "absolute",
+    right: spacing.lg,
+    zIndex: 40
+  },
+  toastLayerWithNav: {
+    bottom: 86
   }
 });

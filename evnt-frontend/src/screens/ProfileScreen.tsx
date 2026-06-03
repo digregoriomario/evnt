@@ -4,7 +4,7 @@ import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-nati
 import { CategoryChip } from "../components/CategoryChip";
 import { EmptyState } from "../components/EmptyState";
 import { EventCard } from "../components/EventCard";
-import { colors, radius, spacing } from "../theme";
+import { colors, radius, shadow, spacing } from "../theme";
 import { EvntEvent, UserProfile } from "../types";
 
 type ProfileScreenProps = {
@@ -30,6 +30,7 @@ export function ProfileScreen({
 }: ProfileScreenProps) {
   const registeredEvents = events.filter((event) => registrations.has(event.id));
   const favoriteEvents = events.filter((event) => favorites.has(event.id));
+  const birthDateLabel = formatDate(user.birthDate);
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -45,7 +46,7 @@ export function ProfileScreen({
           <Text style={styles.name}>{user.name}</Text>
           <Text style={styles.meta}>{user.city} · 16+ verificato</Text>
         </View>
-        <Pressable accessibilityLabel="Logout" onPress={onLogout} style={styles.iconButton}>
+        <Pressable accessibilityLabel="Logout" accessibilityRole="button" onPress={onLogout} style={styles.iconButton}>
           <Ionicons color={colors.muted} name="log-out-outline" size={22} />
         </Pressable>
       </View>
@@ -62,6 +63,12 @@ export function ProfileScreen({
         <Stat value={String(registrations.size)} label="seguiti" />
         <Stat value={String(createdCount)} label="creati" />
         <Stat value={String(favorites.size)} label="preferiti" />
+      </View>
+
+      <View style={styles.infoPanel}>
+        <ProfileInfo icon="location-outline" label="Citta base" value={user.city} />
+        <ProfileInfo icon="calendar-outline" label="Nascita" value={birthDateLabel} />
+        <ProfileInfo icon="sparkles-outline" label="Interessi" value={`${user.interests.length} attivi`} />
       </View>
 
       <View style={styles.section}>
@@ -125,6 +132,35 @@ function Stat({ label, value }: StatProps) {
       <Text style={styles.statLabel}>{label}</Text>
     </View>
   );
+}
+
+type ProfileInfoProps = {
+  icon: keyof typeof Ionicons.glyphMap;
+  label: string;
+  value: string;
+};
+
+function ProfileInfo({ icon, label, value }: ProfileInfoProps) {
+  return (
+    <View style={styles.infoItem}>
+      <View style={styles.infoIcon}>
+        <Ionicons color={colors.ink} name={icon} size={18} />
+      </View>
+      <View style={styles.infoCopy}>
+        <Text style={styles.infoLabel}>{label}</Text>
+        <Text numberOfLines={1} style={styles.infoValue}>{value}</Text>
+      </View>
+    </View>
+  );
+}
+
+function formatDate(value: string) {
+  const [year, month, day] = value.split("-");
+  if (!year || !month || !day) {
+    return value;
+  }
+
+  return `${day}/${month}/${year}`;
 }
 
 const styles = StyleSheet.create({
@@ -197,7 +233,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: "row",
-    padding: spacing.md
+    padding: spacing.md,
+    ...shadow
   },
   stat: {
     alignItems: "center",
@@ -215,6 +252,42 @@ const styles = StyleSheet.create({
   },
   section: {
     gap: spacing.md
+  },
+  infoPanel: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: spacing.sm,
+    padding: spacing.md,
+    ...shadow
+  },
+  infoItem: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md
+  },
+  infoIcon: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: radius.md,
+    height: 38,
+    justifyContent: "center",
+    width: 38
+  },
+  infoCopy: {
+    flex: 1
+  },
+  infoLabel: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "800"
+  },
+  infoValue: {
+    color: colors.ink,
+    fontSize: 15,
+    fontWeight: "900",
+    marginTop: 2
   },
   sectionHeader: {
     alignItems: "center",

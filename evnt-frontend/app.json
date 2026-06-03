@@ -26,7 +26,9 @@
         {
           "locationWhenInUsePermission": "Evnt usa la tua posizione per mostrarti gli eventi vicini sulla mappa."
         }
-      ]
+      ],
+      "expo-secure-store",
+      "@react-native-community/datetimepicker"
     ],
     "web": {
       "bundler": "metro",

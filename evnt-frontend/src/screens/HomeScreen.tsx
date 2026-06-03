@@ -5,17 +5,23 @@ import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 
 import { CategoryChip } from "../components/CategoryChip";
 import { EmptyState } from "../components/EmptyState";
 import { EventCard } from "../components/EventCard";
+import { LocationFallbackBanner } from "../components/LocationFallbackBanner";
+import { PillButton } from "../components/PillButton";
+import { cityMatches } from "../data/cities";
 import { categories } from "../data/events";
-import { colors, radius, shadow, spacing } from "../theme";
-import { Category, EvntEvent, UserProfile } from "../types";
+import { colors, radius, spacing } from "../theme";
+import { Category, Coordinates, EvntEvent, LocationStatus, UserProfile } from "../types";
 
 type HomeScreenProps = {
   events: EvntEvent[];
   favorites: Set<string>;
+  locationStatus: LocationStatus;
   registrations: Set<string>;
   user: UserProfile;
   onOpenEvent: (event: EvntEvent) => void;
+  onRequestLocation: () => Promise<Coordinates | null>;
   onToggleFavorite: (eventId: string) => void;
+  userCoordinates: Coordinates | null;
 };
 
 type PriceFilter = "tutti" | "gratis" | "pagamento";
@@ -23,20 +29,26 @@ type PriceFilter = "tutti" | "gratis" | "pagamento";
 export function HomeScreen({
   events,
   favorites,
+  locationStatus,
   registrations,
   user,
   onOpenEvent,
-  onToggleFavorite
+  onRequestLocation,
+  onToggleFavorite,
+  userCoordinates
 }: HomeScreenProps) {
   const [selectedCategory, setSelectedCategory] = useState<Category | "Tutti">("Tutti");
   const [query, setQuery] = useState("");
   const [price, setPrice] = useState<PriceFilter>("tutti");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const usesCityFallback = locationStatus !== "granted" || userCoordinates === null;
+  const showLocationFallbackNotice = usesCityFallback && locationStatus !== "loading";
 
   const filteredEvents = useMemo(() => {
     const normalized = query.trim().toLowerCase();
     return events
       .filter((event) => {
+        const matchesFallbackCity = !usesCityFallback || cityMatches(event.city, user.city);
         const matchesCategory = selectedCategory === "Tutti" || event.category === selectedCategory;
         const matchesQuery =
           normalized.length === 0 ||
@@ -47,29 +59,40 @@ export function HomeScreen({
           price === "tutti" ||
           (price === "gratis" && event.price === 0) ||
           (price === "pagamento" && event.price > 0);
-        return matchesCategory && matchesQuery && matchesPrice;
+        return matchesFallbackCity && matchesCategory && matchesQuery && matchesPrice;
       })
       .sort((a, b) => b.affinity - a.affinity || a.distanceKm - b.distanceKm);
-  }, [events, price, query, selectedCategory]);
+  }, [events, price, query, selectedCategory, user.city, usesCityFallback]);
 
-  const activeFilterCount = (selectedCategory === "Tutti" ? 0 : 1) + (price === "tutti" ? 0 : 1);
+  const activeFilterCount =
+    (selectedCategory === "Tutti" ? 0 : 1) + (price === "tutti" ? 0 : 1) + (query.trim() ? 1 : 0);
 
   const clearFilters = () => {
     setSelectedCategory("Tutti");
     setPrice("tutti");
+    setQuery("");
   };
 
   return (
     <>
-      <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
+      <ScrollView
+        contentContainerStyle={styles.container}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
         <View style={styles.header}>
           <Text style={styles.title}>Ciao, {user.name}</Text>
         </View>
+
+        {showLocationFallbackNotice && (
+          <LocationFallbackBanner city={user.city} onRetry={() => void onRequestLocation()} />
+        )}
 
         <View style={styles.searchRow}>
           <View style={styles.searchBox}>
             <Ionicons color={colors.muted} name="search-outline" size={20} />
             <TextInput
+              accessibilityLabel="Cerca eventi"
               autoCapitalize="none"
               onChangeText={setQuery}
               placeholder="Cerca eventi"
@@ -78,19 +101,20 @@ export function HomeScreen({
               value={query}
             />
             {query.length > 0 && (
-              <Pressable accessibilityLabel="Cancella ricerca" onPress={() => setQuery("")}>
+              <Pressable accessibilityLabel="Cancella ricerca" accessibilityRole="button" onPress={() => setQuery("")}>
                 <Ionicons color={colors.muted} name="close-circle" size={20} />
               </Pressable>
             )}
           </View>
 
           <Pressable
+            accessibilityLabel="Filtri eventi"
             accessibilityRole="button"
             onPress={() => setFiltersOpen(true)}
             style={styles.filterButton}
           >
             <Ionicons color={colors.ink} name="options-outline" size={20} />
-            {activeFilterCount > 0 && (
+              {activeFilterCount > 0 && (
               <View style={styles.filterBadge}>
                 <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
               </View>
@@ -101,7 +125,9 @@ export function HomeScreen({
         <View style={styles.feedHeader}>
           <View>
             <Text style={styles.sectionTitle}>Eventi</Text>
-            <Text style={styles.sectionMeta}>{filteredEvents.length} risultati</Text>
+            <Text style={styles.sectionMeta}>
+              {filteredEvents.length} risultati{usesCityFallback ? ` a ${user.city}` : ""}
+            </Text>
           </View>
           {activeFilterCount > 0 && (
             <Pressable accessibilityRole="button" onPress={clearFilters} style={styles.clearButton}>
@@ -112,7 +138,11 @@ export function HomeScreen({
 
         {filteredEvents.length === 0 ? (
           <EmptyState
-            body="Modifica ricerca o filtri per vedere altri eventi."
+            body={
+              usesCityFallback
+                ? `Non ci sono eventi a ${user.city} con questi filtri.`
+                : "Modifica ricerca o filtri per vedere altri eventi."
+            }
             icon="calendar-clear-outline"
             title="Nessun evento trovato"
           />
@@ -134,8 +164,13 @@ export function HomeScreen({
         <View style={styles.modalOverlay}>
           <View style={styles.filterSheet}>
             <View style={styles.sheetHeader}>
-              <Text style={styles.sheetTitle}>Filtri</Text>
-              <Pressable accessibilityLabel="Chiudi filtri" onPress={() => setFiltersOpen(false)} style={styles.closeButton}>
+            <Text style={styles.sheetTitle}>Filtri</Text>
+              <Pressable
+                accessibilityLabel="Chiudi filtri"
+                accessibilityRole="button"
+                onPress={() => setFiltersOpen(false)}
+                style={styles.closeButton}
+              >
                 <Ionicons color={colors.ink} name="close" size={22} />
               </Pressable>
             </View>
@@ -195,15 +230,14 @@ type FilterOptionProps = {
 
 function FilterOption({ label, onPress, selected }: FilterOptionProps) {
   return (
-    <Pressable
+    <PillButton
+      accessibilityLabel={`Filtro ${label}`}
+      accent={selected ? "#5A4BC4" : colors.ink}
+      label={label}
       onPress={onPress}
-      style={[
-        styles.option,
-        selected && styles.optionSelected
-      ]}
-    >
-      <Text style={[styles.optionText, selected && styles.optionTextSelected]}>{label}</Text>
-    </Pressable>
+      selected={selected}
+      soft={selected ? "#F0EEFF" : colors.surfaceMuted}
+    />
   );
 }
 
@@ -215,6 +249,50 @@ const styles = StyleSheet.create({
   },
   header: {
     paddingTop: spacing.sm
+  },
+  locationBanner: {
+    alignItems: "center",
+    backgroundColor: "#FFF7DF",
+    borderColor: "#F3D28A",
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.md
+  },
+  locationBannerCopy: {
+    flex: 1,
+    gap: 2
+  },
+  locationBannerIcon: {
+    alignItems: "center",
+    backgroundColor: "#FFE9A8",
+    borderRadius: 18,
+    height: 36,
+    justifyContent: "center",
+    width: 36
+  },
+  locationBannerText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 17
+  },
+  locationBannerTitle: {
+    color: colors.ink,
+    fontSize: 14,
+    fontWeight: "900"
+  },
+  locationRetry: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.sm,
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs
+  },
+  locationRetryText: {
+    color: colors.ink,
+    fontSize: 12,
+    fontWeight: "900"
   },
   title: {
     color: colors.ink,
@@ -342,29 +420,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm
-  },
-  option: {
-    backgroundColor: "#F7F3EA",
-    borderColor: "#F7F3EA",
-    borderRadius: 28,
-    borderWidth: 1,
-    justifyContent: "center",
-    minHeight: 54,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.sm,
-    ...shadow
-  },
-  optionSelected: {
-    backgroundColor: "#F0EEFF",
-    borderColor: "#5A4BC4"
-  },
-  optionText: {
-    color: colors.ink,
-    fontSize: 16,
-    fontWeight: "900"
-  },
-  optionTextSelected: {
-    color: "#5A4BC4"
   },
   sheetActions: {
     flexDirection: "row",

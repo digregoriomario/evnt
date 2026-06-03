@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { colors, spacing } from "../theme";
+import { colors, radius, spacing } from "../theme";
 import { ScreenKey } from "../types";
 
 type TabItem = {
@@ -37,7 +37,7 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
             accessibilityState={{ selected }}
             key={tab.key}
             onPress={() => onChange(tab.key)}
-            style={styles.item}
+            style={[styles.item, selected && styles.activeItem]}
           >
             <Ionicons
               color={selected ? colors.primary : colors.muted}
@@ -60,14 +60,19 @@ const styles = StyleSheet.create({
     borderTopWidth: 1,
     flexDirection: "row",
     paddingBottom: spacing.sm,
+    paddingHorizontal: spacing.sm,
     paddingTop: spacing.sm
   },
   item: {
     alignItems: "center",
+    borderRadius: radius.md,
     flex: 1,
     gap: 2,
     justifyContent: "center",
     minHeight: 54
+  },
+  activeItem: {
+    backgroundColor: colors.surfaceMuted
   },
   label: {
     color: colors.muted,

@@ -1,23 +1,28 @@
 import { Ionicons } from "@expo/vector-icons";
-import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
-import MapView, { Circle, Marker, type LatLng, type Region } from "react-native-maps";
+import { Modal, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
+import MapView, { Callout, Circle, Marker, type LatLng, type Region } from "react-native-maps";
 
-import { CategoryChip } from "../components/CategoryChip";
-import { categories, categoryColors, categoryEmojis, categorySoftColors } from "../data/events";
+import { LocationFallbackBanner } from "../components/LocationFallbackBanner";
+import { MapFiltersModal, MapFiltersSheet, type PriceFilter } from "../components/MapFiltersModal";
+import { PillButton } from "../components/PillButton";
+import { cityMatches, findCitySuggestion } from "../data/cities";
+import { categoryColors, categoryEmojis, categorySoftColors, getEventSubcategoryLabel } from "../data/events";
 import { colors, radius, shadow, spacing } from "../theme";
-import { Category, EvntEvent } from "../types";
+import { Category, Coordinates, EvntEvent, LocationStatus, UserProfile } from "../types";
 
 type MapScreenProps = {
   events: EvntEvent[];
   favorites: Set<string>;
+  locationStatus: LocationStatus;
   registrations: Set<string>;
+  user: UserProfile;
+  userCoordinates: Coordinates | null;
   onOpenEvent: (event: EvntEvent) => void;
+  onRequestLocation: () => Promise<Coordinates | null>;
   onToggleFavorite: (eventId: string) => void;
 };
 
-type LocationStatus = "loading" | "granted" | "denied" | "unavailable";
 type RadiusOption = 1 | 3 | 5 | 10 | 25;
 
 const defaultRegion: Region = {
@@ -82,83 +87,75 @@ function distanceBetweenKm(from: LatLng, to: LatLng) {
 export function MapScreen({
   events,
   favorites,
+  locationStatus,
   registrations,
+  user,
+  userCoordinates,
   onOpenEvent,
+  onRequestLocation,
   onToggleFavorite
 }: MapScreenProps) {
   const mapRef = useRef<MapView | null>(null);
+  const fullscreenMapRef = useRef<MapView | null>(null);
   const [category, setCategory] = useState<Category | "Tutti">("Tutti");
+  const [price, setPrice] = useState<PriceFilter>("tutti");
   const [radiusKm, setRadiusKm] = useState<RadiusOption>(10);
   const [selectedEventId, setSelectedEventId] = useState(events[0]?.id);
-  const [userCoordinates, setUserCoordinates] = useState<LatLng | null>(null);
-  const [locationStatus, setLocationStatus] = useState<LocationStatus>("loading");
   const [mapReady, setMapReady] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [fullscreenOpen, setFullscreenOpen] = useState(false);
+
+  const fallbackCoordinates = useMemo(() => {
+    const fallbackCity = findCitySuggestion(user.city);
+    return toLatLng(
+      user.cityCoordinates ?? fallbackCity?.coordinates ?? {
+        latitude: defaultRegion.latitude,
+        longitude: defaultRegion.longitude
+      }
+    );
+  }, [user.city, user.cityCoordinates]);
+
+  const hasDeviceLocation = locationStatus === "granted" && userCoordinates !== null;
+  const usesCityFallback = !hasDeviceLocation;
+  const showLocationFallbackNotice = usesCityFallback && locationStatus !== "loading";
+  const radiusCenter = useMemo(
+    () => (hasDeviceLocation && userCoordinates ? toLatLng(userCoordinates) : fallbackCoordinates),
+    [fallbackCoordinates, hasDeviceLocation, userCoordinates]
+  );
 
   const eventDistances = useMemo(() => {
     return events.reduce<Record<string, number>>((distances, event) => {
-      distances[event.id] = userCoordinates
-        ? distanceBetweenKm(userCoordinates, event.coordinates)
-        : event.distanceKm;
+      distances[event.id] = distanceBetweenKm(radiusCenter, event.coordinates);
       return distances;
     }, {});
-  }, [events, userCoordinates]);
+  }, [events, radiusCenter]);
 
   const filteredEvents = useMemo(
     () =>
       events.filter((event) => {
+        const matchesFallbackCity = !usesCityFallback || cityMatches(event.city, user.city);
         const matchesCategory = category === "Tutti" || event.category === category;
+        const matchesPrice =
+          price === "tutti" ||
+          (price === "gratis" && event.price === 0) ||
+          (price === "pagamento" && event.price > 0);
         const distanceKm = eventDistances[event.id] ?? event.distanceKm;
-        return matchesCategory && distanceKm <= radiusKm;
+        return matchesFallbackCity && matchesCategory && matchesPrice && distanceKm <= radiusKm;
       }),
-    [category, eventDistances, events, radiusKm]
+    [category, eventDistances, events, price, radiusKm, user.city, usesCityFallback]
   );
 
   const selectedEvent =
     filteredEvents.find((event) => event.id === selectedEventId) ?? filteredEvents[0];
 
-  const updateUserLocation = useCallback(async (animate = true) => {
-    setLocationStatus("loading");
-
-    try {
-      const servicesEnabled = await Location.hasServicesEnabledAsync();
-      if (!servicesEnabled) {
-        setLocationStatus("unavailable");
-        return;
-      }
-
-      const permission = await Location.requestForegroundPermissionsAsync();
-      if (permission.status !== Location.PermissionStatus.GRANTED) {
-        setLocationStatus("denied");
-        return;
-      }
-
-      const lastKnown = await Location.getLastKnownPositionAsync();
-      if (lastKnown) {
-        const coords = toLatLng(lastKnown.coords);
-        setUserCoordinates(coords);
-        setLocationStatus("granted");
-        if (animate) {
-          mapRef.current?.animateToRegion(regionFromCoordinates(coords), 500);
-        }
-      }
-
-      const current = await Location.getCurrentPositionAsync({
-        accuracy: Location.Accuracy.Balanced
-      });
-      const coords = toLatLng(current.coords);
-      setUserCoordinates(coords);
-      setLocationStatus("granted");
-      if (animate) {
-        mapRef.current?.animateToRegion(regionFromCoordinates(coords), 500);
-      }
-    } catch {
-      setLocationStatus("unavailable");
+  const updateUserLocation = useCallback(async () => {
+    const coords = await onRequestLocation();
+    if (coords) {
+      const region = regionFromCoordinates(toLatLng(coords));
+      mapRef.current?.animateToRegion(region, 500);
+      fullscreenMapRef.current?.animateToRegion(region, 500);
     }
-  }, []);
-
-  useEffect(() => {
-    void updateUserLocation(false);
-  }, [updateUserLocation]);
+  }, [onRequestLocation]);
 
   useEffect(() => {
     if (!mapReady || filteredEvents.length === 0) {
@@ -168,11 +165,11 @@ export function MapScreen({
     mapRef.current?.fitToCoordinates(
       [
         ...filteredEvents.map((event) => event.coordinates),
-        ...(userCoordinates ? [userCoordinates] : [])
+        radiusCenter
       ],
       { animated: true, edgePadding: mapEdgePadding }
     );
-  }, [filteredEvents, mapReady, userCoordinates]);
+  }, [filteredEvents, mapReady, radiusCenter]);
 
   useEffect(() => {
     if (selectedEventId && filteredEvents.some((event) => event.id === selectedEventId)) {
@@ -183,13 +180,15 @@ export function MapScreen({
   }, [filteredEvents, selectedEventId]);
 
   const selectEvent = (event: EvntEvent) => {
+    const region = regionFromCoordinates(event.coordinates, 0.018);
     setSelectedEventId(event.id);
-    mapRef.current?.animateToRegion(regionFromCoordinates(event.coordinates, 0.018), 450);
+    mapRef.current?.animateToRegion(region, 450);
+    fullscreenMapRef.current?.animateToRegion(region, 450);
   };
 
   const locationCopy = {
     denied: {
-      body: "Abilita il permesso posizione per vedere dove sei sulla mappa.",
+      body: `Permesso posizione mancante: mostriamo gli eventi della citta indicata, ${user.city}.`,
       icon: "location-outline" as const,
       title: "Posizione non autorizzata"
     },
@@ -199,25 +198,16 @@ export function MapScreen({
       title: "Geolocalizzazione attiva"
     },
     loading: {
-      body: "Sto recuperando la posizione dal dispositivo.",
+      body: `Sto recuperando la posizione. Intanto uso ${user.city}.`,
       icon: "locate-outline" as const,
       title: "Cerco la tua posizione"
     },
     unavailable: {
-      body: "Servizi posizione non disponibili su questo dispositivo.",
+      body: `Servizi posizione non disponibili: mostriamo gli eventi della citta indicata, ${user.city}.`,
       icon: "alert-circle-outline" as const,
       title: "Posizione non disponibile"
     }
   }[locationStatus];
-
-  const radiusCenter = useMemo(
-    () =>
-      userCoordinates ?? {
-        latitude: defaultRegion.latitude,
-        longitude: defaultRegion.longitude
-      },
-    [userCoordinates]
-  );
 
   useEffect(() => {
     if (!mapReady || filteredEvents.length > 0) {
@@ -227,66 +217,58 @@ export function MapScreen({
     mapRef.current?.animateToRegion(regionFromRadius(radiusCenter, radiusKm), 400);
   }, [filteredEvents.length, mapReady, radiusCenter, radiusKm]);
 
+  const activeFilterCount =
+    (category === "Tutti" ? 0 : 1) + (price === "tutti" ? 0 : 1) + (radiusKm === 10 ? 0 : 1);
+
+  const clearFilters = () => {
+    setCategory("Tutti");
+    setPrice("tutti");
+    setRadiusKm(10);
+  };
+
+  const closeFullscreen = () => {
+    setFullscreenOpen(false);
+    setFiltersOpen(false);
+  };
+
   return (
-    <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Mappa eventi</Text>
-        <Text style={styles.subtitle}>
-          {filteredEvents.length} eventi entro {radiusKm} km
-        </Text>
-      </View>
-
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} style={styles.filterScroller}>
-        <View style={styles.filterRow}>
-          <Pressable
-            onPress={() => setCategory("Tutti")}
-            style={[styles.allChip, category === "Tutti" && styles.allChipActive]}
-          >
-            <Text style={[styles.allChipText, category === "Tutti" && styles.allChipTextActive]}>
-              Tutti
+    <>
+      <View style={styles.root}>
+        <View style={styles.headerRow}>
+          <View style={styles.headerCopy}>
+            <Text style={styles.title}>Mappa eventi</Text>
+            <Text style={styles.subtitle}>
+              {filteredEvents.length} eventi entro {radiusKm} km
+              {usesCityFallback ? ` a ${user.city}` : ""}
             </Text>
+          </View>
+          <Pressable
+            accessibilityLabel="Filtri mappa"
+            accessibilityRole="button"
+            onPress={() => setFiltersOpen(true)}
+            style={styles.filterButton}
+          >
+            <Ionicons color={colors.ink} name="options-outline" size={20} />
+            {activeFilterCount > 0 && (
+              <View style={styles.filterBadge}>
+                <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+              </View>
+            )}
           </Pressable>
-          {categories.map((item) => (
-            <CategoryChip
-              category={item}
-              key={item}
-              onPress={() => setCategory(item)}
-              selected={category === item}
-            />
-          ))}
         </View>
-      </ScrollView>
 
-      <View style={styles.radiusSection}>
-        <View style={styles.radiusHeader}>
-          <Text style={styles.radiusTitle}>Raggio d'azione</Text>
-          <Text style={styles.radiusValue}>{radiusKm} km</Text>
-        </View>
-        <View style={styles.radiusOptions}>
-          {radiusOptions.map((option) => (
-            <Pressable
-              accessibilityRole="button"
-              accessibilityState={{ selected: radiusKm === option }}
-              key={option}
-              onPress={() => setRadiusKm(option)}
-              style={[styles.radiusChip, radiusKm === option && styles.radiusChipActive]}
-            >
-              <Text style={[styles.radiusChipText, radiusKm === option && styles.radiusChipTextActive]}>
-                {option} km
-              </Text>
-            </Pressable>
-          ))}
-        </View>
-      </View>
+        {showLocationFallbackNotice && (
+          <LocationFallbackBanner city={user.city} onRetry={() => void updateUserLocation()} />
+        )}
 
-      <View style={styles.mapFrame}>
+        <View style={styles.mapFrame}>
         <MapView
           initialRegion={defaultRegion}
           onMapReady={() => setMapReady(true)}
           ref={mapRef}
           showsCompass={false}
           showsMyLocationButton={false}
-          showsUserLocation={locationStatus === "granted"}
+          showsUserLocation={hasDeviceLocation}
           style={styles.map}
           userInterfaceStyle="light"
         >
@@ -311,14 +293,26 @@ export function MapScreen({
                   style={[
                     styles.marker,
                     {
-                      backgroundColor: categoryColors[event.category],
-                      borderColor: categorySoftColors[event.category]
+                      backgroundColor: categorySoftColors[event.category],
+                      borderColor: categoryColors[event.category]
                     },
                     isSelected && styles.markerSelected
                   ]}
                 >
-                  <Ionicons color={colors.surface} name="location" size={18} />
+                  <Text style={styles.markerEmoji}>{categoryEmojis[event.category]}</Text>
                 </View>
+                {isSelected && (
+                  <Callout onPress={() => onOpenEvent(event)} tooltip>
+                    <PoiPreviewCard
+                      distanceKm={eventDistances[event.id] ?? event.distanceKm}
+                      event={event}
+                      favorite={favorites.has(event.id)}
+                      onOpen={() => onOpenEvent(event)}
+                      onToggleFavorite={() => onToggleFavorite(event.id)}
+                      registered={registrations.has(event.id)}
+                    />
+                  </Callout>
+                )}
               </Marker>
             );
           })}
@@ -327,35 +321,36 @@ export function MapScreen({
         <Pressable
           accessibilityLabel="Centra sulla mia posizione"
           accessibilityRole="button"
-          onPress={() => updateUserLocation(true)}
+          onPress={() => void updateUserLocation()}
           style={styles.locateButton}
         >
-          <Ionicons color={colors.ink} name="navigate-outline" size={21} />
+          <Ionicons color={colors.ink} name="locate-outline" size={21} />
         </Pressable>
 
-        {selectedEvent && (
-          <PoiPreviewCard
-            distanceKm={eventDistances[selectedEvent.id] ?? selectedEvent.distanceKm}
-            event={selectedEvent}
-            favorite={favorites.has(selectedEvent.id)}
-            onOpen={() => onOpenEvent(selectedEvent)}
-            onToggleFavorite={() => onToggleFavorite(selectedEvent.id)}
-            registered={registrations.has(selectedEvent.id)}
-          />
-        )}
+        <Pressable
+          accessibilityLabel="Apri mappa a schermo intero"
+          accessibilityRole="button"
+          onPress={() => setFullscreenOpen(true)}
+          style={[styles.expandButton, selectedEvent && styles.expandButtonRaised]}
+        >
+          <Ionicons color={colors.ink} name="expand-outline" size={21} />
+        </Pressable>
 
-        {filteredEvents.length === 0 && (
-          <View style={styles.emptyOverlay}>
-            <View style={styles.emptyIcon}>
-              <Ionicons color={colors.ink} name="map-outline" size={22} />
-            </View>
-            <Text style={styles.emptyTitle}>Non ce ne sono entro questo raggio</Text>
+      </View>
+
+      {filteredEvents.length === 0 && (
+        <View style={styles.emptyPanel}>
+          <View style={styles.emptyIcon}>
+            <Ionicons color={colors.ink} name="map-outline" size={22} />
+          </View>
+          <View style={styles.emptyCopy}>
+            <Text style={styles.emptyTitle}>Non ci sono eventi entro questo raggio</Text>
             <Text style={styles.emptyText}>
               Prova ad aumentare il raggio d'azione o a cambiare categoria.
             </Text>
           </View>
-        )}
-      </View>
+        </View>
+      )}
 
       <View style={styles.locationPanel}>
         <View style={styles.locationIcon}>
@@ -367,7 +362,127 @@ export function MapScreen({
         </View>
       </View>
 
-    </ScrollView>
+      </View>
+
+      <Modal animationType="fade" onRequestClose={closeFullscreen} visible={fullscreenOpen}>
+        <View style={styles.fullscreenRoot}>
+          <MapView
+            initialRegion={regionFromRadius(radiusCenter, radiusKm)}
+            ref={fullscreenMapRef}
+            showsCompass={false}
+            showsMyLocationButton={false}
+            showsUserLocation={hasDeviceLocation}
+            style={styles.fullscreenMap}
+            userInterfaceStyle="light"
+          >
+            <Circle
+              center={radiusCenter}
+              fillColor="rgba(37, 99, 235, 0.10)"
+              radius={radiusKm * 1000}
+              strokeColor="rgba(37, 99, 235, 0.35)"
+              strokeWidth={2}
+            />
+            {filteredEvents.map((event) => {
+              const isSelected = selectedEvent?.id === event.id;
+              return (
+                <Marker
+                  coordinate={event.coordinates}
+                  identifier={`fullscreen-${event.id}`}
+                  key={event.id}
+                  onPress={() => selectEvent(event)}
+                  zIndex={isSelected ? 2 : 1}
+                >
+                  <View
+                    style={[
+                      styles.marker,
+                      {
+                        backgroundColor: categorySoftColors[event.category],
+                        borderColor: categoryColors[event.category]
+                      },
+                      isSelected && styles.markerSelected
+                    ]}
+                  >
+                    <Text style={styles.markerEmoji}>{categoryEmojis[event.category]}</Text>
+                  </View>
+                  {isSelected && (
+                    <Callout onPress={() => onOpenEvent(event)} tooltip>
+                      <PoiPreviewCard
+                        distanceKm={eventDistances[event.id] ?? event.distanceKm}
+                        event={event}
+                        favorite={favorites.has(event.id)}
+                        onOpen={() => onOpenEvent(event)}
+                        onToggleFavorite={() => onToggleFavorite(event.id)}
+                        registered={registrations.has(event.id)}
+                      />
+                    </Callout>
+                  )}
+                </Marker>
+              );
+            })}
+          </MapView>
+          <Pressable
+            accessibilityLabel="Filtri mappa"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => setFiltersOpen(true)}
+            style={styles.fullscreenFilterButton}
+          >
+            <Ionicons color={colors.ink} name="options-outline" size={22} />
+            {activeFilterCount > 0 && (
+              <View style={styles.filterBadge}>
+                <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
+              </View>
+            )}
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Centra sulla mia posizione"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={() => void updateUserLocation()}
+            style={styles.fullscreenLocateButton}
+          >
+            <Ionicons color={colors.ink} name="locate-outline" size={22} />
+          </Pressable>
+          <Pressable
+            accessibilityLabel="Chiudi mappa a schermo intero"
+            accessibilityRole="button"
+            hitSlop={8}
+            onPress={closeFullscreen}
+            style={styles.fullscreenClose}
+          >
+            <Ionicons color={colors.ink} name="contract-outline" size={22} />
+          </Pressable>
+          {filtersOpen && (
+            <View style={styles.fullscreenFilterOverlay}>
+              <MapFiltersSheet
+                category={category}
+                onCategoryChange={setCategory}
+                onClose={() => setFiltersOpen(false)}
+                onPriceChange={setPrice}
+                onRadiusChange={(value) => setRadiusKm(value as RadiusOption)}
+                onReset={clearFilters}
+                price={price}
+                radiusKm={radiusKm}
+                radiusOptions={radiusOptions}
+              />
+            </View>
+          )}
+        </View>
+      </Modal>
+
+      <MapFiltersModal
+        category={category}
+        onCategoryChange={setCategory}
+        onClose={() => setFiltersOpen(false)}
+        onPriceChange={setPrice}
+        onRadiusChange={(value) => setRadiusKm(value as RadiusOption)}
+        onReset={clearFilters}
+        price={price}
+        radiusKm={radiusKm}
+        radiusOptions={radiusOptions}
+        visible={!fullscreenOpen && filtersOpen}
+      />
+    </>
   );
 }
 
@@ -378,6 +493,7 @@ type PoiPreviewCardProps = {
   registered: boolean;
   onOpen: () => void;
   onToggleFavorite: () => void;
+  style?: StyleProp<ViewStyle>;
 };
 
 function PoiPreviewCard({
@@ -386,19 +502,18 @@ function PoiPreviewCard({
   favorite,
   registered,
   onOpen,
-  onToggleFavorite
+  onToggleFavorite,
+  style
 }: PoiPreviewCardProps) {
   const accent = categoryColors[event.category];
   const emoji = categoryEmojis[event.category];
   const soft = categorySoftColors[event.category];
+  const categoryLabel = getEventSubcategoryLabel(event);
 
   return (
-    <Pressable accessibilityRole="button" onPress={onOpen} style={styles.poiCard}>
+    <View style={[styles.poiCard, style]}>
       <View style={styles.poiTopRow}>
-        <View style={[styles.poiBadge, { backgroundColor: soft, borderColor: accent }]}>
-          <Text style={styles.poiBadgeEmoji}>{emoji}</Text>
-          <Text style={[styles.poiBadgeText, { color: accent }]}>{event.category}</Text>
-        </View>
+        <PillButton accent={accent} emoji={emoji} label={categoryLabel} soft={soft} />
 
         <Pressable
           accessibilityLabel={favorite ? "Rimuovi dai preferiti" : "Salva nei preferiti"}
@@ -446,16 +561,22 @@ function PoiPreviewCard({
           )}
         </View>
 
-        <View style={styles.detailButton}>
+        <Pressable accessibilityRole="button" onPress={onOpen} style={styles.detailButton}>
           <Text style={styles.detailButtonText}>Dettagli</Text>
           <Ionicons color={colors.surface} name="arrow-forward" size={15} />
-        </View>
+        </Pressable>
       </View>
-    </Pressable>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
+  root: {
+    flex: 1,
+    gap: spacing.lg,
+    padding: spacing.lg,
+    paddingBottom: spacing.lg
+  },
   container: {
     gap: spacing.lg,
     padding: spacing.lg,
@@ -463,6 +584,16 @@ const styles = StyleSheet.create({
   },
   header: {
     gap: spacing.xs,
+    paddingTop: spacing.sm
+  },
+  headerCopy: {
+    flex: 1,
+    gap: spacing.xs
+  },
+  headerRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
     paddingTop: spacing.sm
   },
   title: {
@@ -474,6 +605,33 @@ const styles = StyleSheet.create({
     color: colors.muted,
     fontSize: 14,
     fontWeight: "700"
+  },
+  filterBadge: {
+    alignItems: "center",
+    backgroundColor: colors.teal,
+    borderRadius: 9,
+    height: 18,
+    justifyContent: "center",
+    position: "absolute",
+    right: 7,
+    top: 7,
+    width: 18
+  },
+  filterBadgeText: {
+    color: colors.surface,
+    fontSize: 11,
+    fontWeight: "900"
+  },
+  filterButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    height: 52,
+    justifyContent: "center",
+    position: "relative",
+    width: 52
   },
   filterScroller: {
     marginHorizontal: -spacing.lg,
@@ -561,7 +719,8 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
-    height: 460,
+    flex: 1,
+    minHeight: 500,
     overflow: "hidden",
     position: "relative",
     ...shadow
@@ -572,7 +731,7 @@ const styles = StyleSheet.create({
   marker: {
     alignItems: "center",
     borderRadius: 18,
-    borderWidth: 4,
+    borderWidth: 2,
     height: 36,
     justifyContent: "center",
     shadowColor: "#000",
@@ -581,8 +740,29 @@ const styles = StyleSheet.create({
     shadowRadius: 8,
     width: 36
   },
+  markerEmoji: {
+    fontSize: 18,
+    lineHeight: 22
+  },
   markerSelected: {
     transform: [{ scale: 1.14 }]
+  },
+  expandButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 21,
+    borderWidth: 1,
+    bottom: spacing.md,
+    height: 42,
+    justifyContent: "center",
+    position: "absolute",
+    right: spacing.md,
+    width: 42,
+    ...shadow
+  },
+  expandButtonRaised: {
+    bottom: spacing.md
   },
   locateButton: {
     alignItems: "center",
@@ -603,35 +783,15 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
-    bottom: spacing.md,
-    gap: spacing.sm,
-    left: spacing.md,
-    padding: spacing.md,
-    position: "absolute",
-    right: spacing.md,
+    gap: spacing.xs,
+    padding: spacing.sm,
+    width: 236,
     ...shadow
   },
   poiTopRow: {
     alignItems: "center",
     flexDirection: "row",
     justifyContent: "space-between"
-  },
-  poiBadge: {
-    alignItems: "center",
-    borderRadius: 18,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: 5,
-    minHeight: 36,
-    paddingHorizontal: spacing.md,
-    paddingVertical: 5
-  },
-  poiBadgeEmoji: {
-    fontSize: 13
-  },
-  poiBadgeText: {
-    fontSize: 12,
-    fontWeight: "900"
   },
   favoriteButton: {
     alignItems: "center",
@@ -641,9 +801,9 @@ const styles = StyleSheet.create({
   },
   poiTitle: {
     color: colors.ink,
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: "900",
-    lineHeight: 22
+    lineHeight: 18
   },
   poiMetaGrid: {
     gap: spacing.xs
@@ -656,7 +816,7 @@ const styles = StyleSheet.create({
   poiMetaText: {
     color: colors.muted,
     flex: 1,
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: "700"
   },
   poiFooter: {
@@ -677,17 +837,17 @@ const styles = StyleSheet.create({
   },
   poiStatText: {
     color: colors.ink,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900"
   },
   poiDot: {
     color: colors.muted,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900"
   },
   registeredText: {
     color: colors.teal,
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: "900"
   },
   detailButton: {
@@ -696,13 +856,17 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     flexDirection: "row",
     gap: spacing.xs,
-    minHeight: 36,
-    paddingHorizontal: spacing.md
+    minHeight: 32,
+    paddingHorizontal: spacing.sm
   },
   detailButtonText: {
     color: colors.surface,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "900"
+  },
+  emptyCopy: {
+    flex: 1,
+    gap: 2
   },
   emptyOverlay: {
     alignItems: "center",
@@ -717,6 +881,16 @@ const styles = StyleSheet.create({
     right: spacing.lg,
     top: 118,
     ...shadow
+  },
+  emptyPanel: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    padding: spacing.md
   },
   emptyIcon: {
     alignItems: "center",
@@ -771,5 +945,67 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: "600",
     lineHeight: 18
+  },
+  fullscreenClose: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 22,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: "center",
+    position: "absolute",
+    right: spacing.lg,
+    top: 64,
+    width: 44,
+    zIndex: 12,
+    ...shadow
+  },
+  fullscreenFilterButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 22,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: "center",
+    left: spacing.lg,
+    position: "absolute",
+    top: 64,
+    width: 44,
+    zIndex: 12,
+    ...shadow
+  },
+  fullscreenFilterOverlay: {
+    backgroundColor: "rgba(15, 23, 42, 0.32)",
+    bottom: 0,
+    justifyContent: "flex-end",
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0,
+    zIndex: 20
+  },
+  fullscreenLocateButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 22,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: "center",
+    position: "absolute",
+    right: spacing.lg,
+    top: 118,
+    width: 44,
+    zIndex: 12,
+    ...shadow
+  },
+  fullscreenMap: {
+    ...StyleSheet.absoluteFillObject
+  },
+  fullscreenRoot: {
+    backgroundColor: colors.background,
+    flex: 1
   }
 });

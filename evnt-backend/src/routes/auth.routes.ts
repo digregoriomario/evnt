@@ -9,16 +9,31 @@ import { authRequired } from "../middleware/auth";
 
 export const authRouter = Router();
 
+const emailSchema = z.string().trim().toLowerCase().email();
+const imageSchema = z.string().refine(
+  (value) => z.string().url().safeParse(value).success || /^data:image\/[a-zA-Z0-9.+-]+;base64,/.test(value),
+  "Invalid image"
+);
+
 const registerSchema = z.object({
-  email: z.string().email(),
+  email: emailSchema,
   password: z.string().min(6),
   name: z.string().min(1),
   birthDate: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "Invalid date"),
-  city: z.string().optional(),
+  city: z.string().trim().min(2, "City is required"),
   bio: z.string().optional(),
-  image: z.string().url().optional(),
+  image: imageSchema.optional(),
   interests: z.array(z.string()).optional()
 });
+
+authRouter.get(
+  "/email-available",
+  asyncHandler(async (req, res) => {
+    const { email } = z.object({ email: emailSchema }).parse(req.query);
+    const existing = await prisma.user.findUnique({ where: { email } });
+    res.json({ available: !existing });
+  })
+);
 
 const ageInYears = (birth: Date) => {
   const diff = Date.now() - birth.getTime();
@@ -75,7 +90,7 @@ authRouter.post(
 );
 
 const loginSchema = z.object({
-  email: z.string().email(),
+  email: emailSchema,
   password: z.string().min(1)
 });
 
