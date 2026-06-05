@@ -11,7 +11,11 @@ const TAXONOMY: { interest: string; categories: { name: string; icon: string }[]
   { interest: "Socialità", categories: [{ name: "Social", icon: "🤝" }] },
   { interest: "Cultura", categories: [{ name: "Arte", icon: "🎨" }] },
   { interest: "Tecnologia", categories: [{ name: "Tech", icon: "💻" }] },
-  { interest: "Nightlife", categories: [{ name: "Serata", icon: "🌙" }] }
+  { interest: "Nightlife", categories: [{ name: "Serata", icon: "🌙" }] },
+  { interest: "Benessere", categories: [{ name: "Benessere", icon: "🧘" }] },
+  { interest: "Viaggi", categories: [{ name: "Viaggi", icon: "🧳" }] },
+  { interest: "Gaming", categories: [{ name: "Gaming", icon: "🎮" }] },
+  { interest: "Cinema", categories: [{ name: "Cinema", icon: "🎬" }] }
 ];
 
 type SeedEvent = {

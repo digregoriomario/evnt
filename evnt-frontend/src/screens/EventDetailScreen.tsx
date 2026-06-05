@@ -14,20 +14,24 @@ import { colors, radius, shadow, spacing } from "../theme";
 import { EvntEvent } from "../types";
 
 type EventDetailScreenProps = {
+  canEdit?: boolean;
   event: EvntEvent;
   favorite: boolean;
   registered: boolean;
   onBack: () => void;
+  onEdit?: () => void;
   onOpenInbox: () => void;
   onToggleFavorite: () => void;
   onToggleRegistration: () => void;
 };
 
 export function EventDetailScreen({
+  canEdit = false,
   event,
   favorite,
   registered,
   onBack,
+  onEdit,
   onOpenInbox,
   onToggleFavorite,
   onToggleRegistration
@@ -74,14 +78,26 @@ export function EventDetailScreen({
             >
               <Ionicons color={colors.ink} name="chevron-back" size={24} />
             </Pressable>
-            <Pressable
-              accessibilityLabel={favorite ? "Rimuovi preferito" : "Aggiungi preferito"}
-              accessibilityRole="button"
-              onPress={onToggleFavorite}
-              style={styles.roundButton}
-            >
-              <Ionicons color={favorite ? colors.primary : colors.ink} name={favorite ? "heart" : "heart-outline"} size={22} />
-            </Pressable>
+            <View style={styles.trailingActions}>
+              {canEdit && onEdit ? (
+                <Pressable
+                  accessibilityLabel="Modifica evento"
+                  accessibilityRole="button"
+                  onPress={onEdit}
+                  style={styles.roundButton}
+                >
+                  <Ionicons color={colors.ink} name="create-outline" size={22} />
+                </Pressable>
+              ) : null}
+              <Pressable
+                accessibilityLabel={favorite ? "Rimuovi preferito" : "Aggiungi preferito"}
+                accessibilityRole="button"
+                onPress={onToggleFavorite}
+                style={styles.roundButton}
+              >
+                <Ionicons color={favorite ? colors.primary : colors.ink} name={favorite ? "heart" : "heart-outline"} size={22} />
+              </Pressable>
+            </View>
           </View>
         </View>
 
@@ -235,6 +251,10 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: spacing.lg,
     top: spacing.xl
+  },
+  trailingActions: {
+    flexDirection: "row",
+    gap: spacing.sm
   },
   roundButton: {
     alignItems: "center",

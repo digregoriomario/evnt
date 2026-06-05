@@ -25,6 +25,14 @@ const formatDateLabel = (d: Date) => {
 const formatTimeLabel = (d: Date) =>
   `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 
+export const subcategoryTagPrefix = "subcategory:";
+
+export const subcategoryFromTags = (tags: string[]) =>
+  tags.find((tag) => tag.startsWith(subcategoryTagPrefix))?.slice(subcategoryTagPrefix.length).trim();
+
+export const publicEventTags = (tags: string[]) =>
+  tags.filter((tag) => !tag.startsWith(subcategoryTagPrefix));
+
 const cityFromPlace = (place: string) => {
   const parts = place.split(",").map((p) => p.trim());
   return parts.length > 1 ? parts[parts.length - 1] : "";
@@ -63,6 +71,7 @@ export const serializeEvent = (e: EventRecord, ctx: SerializeContext = {}) => {
   const capacity = e.maxSeats ?? null;
   const fillRatio = capacity ? participants / capacity : participants / 100;
   const popularity = Math.min(99, Math.round(40 + fillRatio * 59));
+  const subcategory = subcategoryFromTags(e.tags);
 
   return {
     id: String(e.id),
@@ -83,8 +92,10 @@ export const serializeEvent = (e: EventRecord, ctx: SerializeContext = {}) => {
     description: e.description,
     organizer: e.creator.name,
     chatMode: chatTypeToLabel(e.chatType),
-    tags: e.tags,
+    tags: publicEventTags(e.tags),
     coordinates: { latitude: e.latitude, longitude: e.longitude },
+    dateTimeIso: e.dateHour.toISOString(),
+    subcategory: subcategory || undefined,
     favorite: ctx.favorite ?? false,
     registered: ctx.registered ?? false,
     status: e.isLive ? "live" : popularity >= 85 ? "trending" : undefined

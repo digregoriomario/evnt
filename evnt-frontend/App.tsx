@@ -1,7 +1,8 @@
 import { StatusBar } from "expo-status-bar";
 import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Platform, SafeAreaView, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, Text, View } from "react-native";
+import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 import { BottomNav } from "./src/components/BottomNav";
 import { ToastBanner, type ToastTone } from "./src/components/ToastBanner";
@@ -17,7 +18,16 @@ import { ProfileScreen } from "./src/screens/ProfileScreen";
 import { clearStoredSession, loadStoredSession, saveStoredSession } from "./src/session";
 import { colors, spacing } from "./src/theme";
 import { Coordinates, EvntEvent, LocationStatus, ScreenKey, UserProfile } from "./src/types";
-import { api, ApiError, getAuthToken, isBackendReachable, setAuthToken, type ApiEvent } from "./src/api";
+import {
+  api,
+  ApiError,
+  getActiveApiBaseUrl,
+  getAuthToken,
+  isBackendReachable,
+  setAuthToken,
+  type ApiEvent,
+  type CreateEventPayload
+} from "./src/api";
 import { searchCitiesWorldwide } from "./src/api/geocoding";
 
 const mainScreens: ScreenKey[] = ["home", "map", "create", "inbox", "profile"];
@@ -35,6 +45,7 @@ export default function App() {
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("loading");
   const [userCoordinates, setUserCoordinates] = useState<Coordinates | null>(null);
   const [initialChatEventId, setInitialChatEventId] = useState<string | undefined>();
+  const [editingEventId, setEditingEventId] = useState<string | undefined>();
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -77,6 +88,7 @@ export default function App() {
   };
 
   const openEvent = (event: EvntEvent) => {
+    setEditingEventId(undefined);
     setSelectedEventId(event.id);
     if (mainScreens.includes(screen)) {
       setPreviousScreen(screen);
@@ -85,11 +97,24 @@ export default function App() {
   };
 
   const openInbox = (eventId?: string) => {
+    setEditingEventId(undefined);
     setInitialChatEventId(eventId);
     if (mainScreens.includes(screen)) {
       setPreviousScreen(screen);
     }
     setScreen("inbox");
+  };
+
+  const isOwnEvent = useCallback(
+    (event: EvntEvent) => user?.name.trim().toLowerCase() === event.organizer.trim().toLowerCase(),
+    [user?.name]
+  );
+
+  const editEvent = (event: EvntEvent) => {
+    setSelectedEventId(event.id);
+    setEditingEventId(event.id);
+    setPreviousScreen("detail");
+    setScreen("create");
   };
 
   const requestUserLocation = useCallback(async (): Promise<Coordinates | null> => {
@@ -222,6 +247,22 @@ export default function App() {
     );
   };
 
+  const eventToPayload = (event: EvntEvent): CreateEventPayload => ({
+    title: event.title,
+    description: event.description,
+    dateHour: event.dateTimeIso ?? new Date().toISOString(),
+    place: event.address || event.place,
+    latitude: event.coordinates.latitude,
+    longitude: event.coordinates.longitude,
+    price: event.price,
+    maxSeats: event.capacity ?? null,
+    category: event.category,
+    chatMode: event.chatMode,
+    image: event.image || undefined,
+    tags: event.tags,
+    subcategory: event.subcategory
+  });
+
   const createEvent = (event: EvntEvent) => {
     setEvents((current) => [event, ...current]);
     setRegistrations((current) => new Set(current).add(event.id));
@@ -231,35 +272,95 @@ export default function App() {
     showToast("Evento creato e chat evento pronta.", "success");
     if (online) {
       api
-        .createEvent({
-          title: event.title,
-          description: event.description,
-          dateHour: event.dateTimeIso ?? new Date().toISOString(),
-          place: event.address || event.place,
-          latitude: event.coordinates.latitude,
-          longitude: event.coordinates.longitude,
-          price: event.price,
-          maxSeats: event.capacity ?? null,
-          category: event.category,
-          chatMode: event.chatMode,
-          image: event.image || undefined,
-          tags: event.tags
-        })
+        .createEvent(eventToPayload(event))
         .then((createdEvent) => {
+          const eventWithSubcategory = { ...createdEvent, subcategory: event.subcategory };
           setEvents((current) =>
             current.map((currentEvent) =>
-              currentEvent.id === event.id ? createdEvent : currentEvent
+              currentEvent.id === event.id ? eventWithSubcategory : currentEvent
             )
           );
           setRegistrations((current) => {
             const next = new Set(current);
             next.delete(event.id);
-            next.add(createdEvent.id);
+            next.add(eventWithSubcategory.id);
             return next;
           });
-          setSelectedEventId((current) => (current === event.id ? createdEvent.id : current));
+          setSelectedEventId((current) => (current === event.id ? eventWithSubcategory.id : current));
         })
         .catch(() => undefined);
+    }
+  };
+
+  const updateEvent = (event: EvntEvent) => {
+    setEvents((current) => current.map((item) => (item.id === event.id ? event : item)));
+    setSelectedEventId(event.id);
+    setEditingEventId(undefined);
+    setPreviousScreen("detail");
+    setScreen("detail");
+    showToast("Evento aggiornato.", "success");
+
+    if (online && /^\d+$/.test(event.id)) {
+      api
+        .updateEvent(event.id, eventToPayload(event))
+        .then(({ event: remoteEvent }) => {
+          const eventWithSubcategory = { ...remoteEvent, subcategory: event.subcategory };
+          setEvents((current) =>
+            current.map((item) => (item.id === event.id ? eventWithSubcategory : item))
+          );
+          setSelectedEventId((current) => (current === event.id ? eventWithSubcategory.id : current));
+        })
+        .catch(() => showToast("Evento salvato localmente, ma non sincronizzato.", "warning"));
+    }
+  };
+
+  const updateProfile = async (profile: UserProfile): Promise<AuthResult> => {
+    if (!user) {
+      return { ok: false, message: "Sessione non disponibile." };
+    }
+
+    const previousUser = user;
+    const nextProfile = {
+      ...profile,
+      cityCoordinates: profile.city === previousUser.city ? profile.cityCoordinates : undefined
+    };
+
+    const applyProfile = (savedProfile: UserProfile) => {
+      setUser(savedProfile);
+      setEvents((current) =>
+        current.map((event) =>
+          event.organizer.trim().toLowerCase() === previousUser.name.trim().toLowerCase()
+            ? { ...event, organizer: savedProfile.name }
+            : event
+        )
+      );
+    };
+
+    if (!online) {
+      applyProfile(nextProfile);
+      showToast("Profilo aggiornato localmente.", "success");
+      return { ok: true };
+    }
+
+    try {
+      const remoteUser = await api.updateProfile({
+        name: nextProfile.name,
+        city: nextProfile.city,
+        bio: nextProfile.bio,
+        image: nextProfile.avatar,
+        interests: nextProfile.interests
+      });
+      const savedProfile = { ...nextProfile, ...remoteUser };
+      applyProfile(savedProfile);
+      const token = getAuthToken();
+      if (token) {
+        await saveStoredSession({ token, user: savedProfile });
+      }
+      showToast("Profilo aggiornato.", "success");
+      return { ok: true };
+    } catch (error) {
+      const message = error instanceof ApiError ? error.message : "Non riesco ad aggiornare il profilo.";
+      return { ok: false, message };
     }
   };
 
@@ -379,7 +480,7 @@ export default function App() {
       setOnline(false);
       return {
         ok: false,
-        message: "Backend non raggiungibile. Avvia il server e riprova."
+        message: `Backend non raggiungibile da ${getActiveApiBaseUrl()}. Avvia il server e riprova.`
       };
     }
 
@@ -417,6 +518,8 @@ export default function App() {
   };
 
   const renderScreen = () => {
+    const editingEvent = editingEventId ? events.find((event) => event.id === editingEventId) : undefined;
+
     if (sessionLoading) {
       return (
         <View style={styles.loadingScreen}>
@@ -435,9 +538,11 @@ export default function App() {
     if (screen === "detail" && selectedEvent) {
       return (
         <EventDetailScreen
+          canEdit={isOwnEvent(selectedEvent)}
           event={selectedEvent}
           favorite={favorites.has(selectedEvent.id)}
           onBack={() => setScreen(previousScreen)}
+          onEdit={() => editEvent(selectedEvent)}
           onOpenInbox={() => openInbox(selectedEvent.id)}
           onToggleFavorite={() => toggleFavorite(selectedEvent.id)}
           onToggleRegistration={() => toggleRegistration(selectedEvent.id)}
@@ -476,7 +581,18 @@ export default function App() {
     }
 
     if (screen === "create") {
-      return <CreateEventScreen onCreate={createEvent} user={user} />;
+      return (
+        <CreateEventScreen
+          initialEvent={editingEvent}
+          onCancel={editingEvent ? () => {
+            setEditingEventId(undefined);
+            setScreen("detail");
+          } : undefined}
+          onCreate={createEvent}
+          onUpdate={updateEvent}
+          user={user}
+        />
+      );
     }
 
     if (screen === "profile") {
@@ -488,6 +604,7 @@ export default function App() {
           onLogout={logout}
           onOpenEvent={openEvent}
           onToggleFavorite={toggleFavorite}
+          onUpdateProfile={updateProfile}
           registrations={registrations}
           user={user}
         />
@@ -511,18 +628,20 @@ export default function App() {
 
   return (
     <GluestackUIProvider>
-      <SafeAreaView style={styles.safeArea}>
-        <StatusBar style="dark" />
-        <View style={styles.appFrame}>
-          <View style={styles.content}>{renderScreen()}</View>
-          {showBottomNav && <BottomNav active={activeMainScreen} onChange={navigate} />}
-          {toast && (
-            <View pointerEvents="none" style={[styles.toastLayer, showBottomNav && styles.toastLayerWithNav]}>
-              <ToastBanner message={toast.message} tone={toast.tone} />
-            </View>
-          )}
-        </View>
-      </SafeAreaView>
+      <SafeAreaProvider>
+        <SafeAreaView edges={["top", "right", "bottom", "left"]} style={styles.safeArea}>
+          <StatusBar style="dark" />
+          <View style={styles.appFrame}>
+            <View style={styles.content}>{renderScreen()}</View>
+            {showBottomNav && <BottomNav active={activeMainScreen} onChange={navigate} />}
+            {toast && (
+              <View pointerEvents="none" style={[styles.toastLayer, showBottomNav && styles.toastLayerWithNav]}>
+                <ToastBanner message={toast.message} tone={toast.tone} />
+              </View>
+            )}
+          </View>
+        </SafeAreaView>
+      </SafeAreaProvider>
     </GluestackUIProvider>
   );
 }

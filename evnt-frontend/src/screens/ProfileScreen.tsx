@@ -1,11 +1,24 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Image, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { useState, type ReactNode } from "react";
+import {
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
+} from "react-native";
 
 import { CategoryChip } from "../components/CategoryChip";
 import { EmptyState } from "../components/EmptyState";
 import { EventCard } from "../components/EventCard";
+import { ProfileImagePicker } from "../components/ProfileImagePicker";
+import { categories } from "../data/events";
 import { colors, radius, shadow, spacing } from "../theme";
-import { EvntEvent, UserProfile } from "../types";
+import { Category, EvntEvent, UserProfile } from "../types";
 
 type ProfileScreenProps = {
   createdCount: number;
@@ -16,6 +29,7 @@ type ProfileScreenProps = {
   onLogout: () => void;
   onOpenEvent: (event: EvntEvent) => void;
   onToggleFavorite: (eventId: string) => void;
+  onUpdateProfile: (profile: UserProfile) => Promise<{ ok: boolean; message?: string }>;
 };
 
 export function ProfileScreen({
@@ -26,11 +40,166 @@ export function ProfileScreen({
   user,
   onLogout,
   onOpenEvent,
-  onToggleFavorite
+  onToggleFavorite,
+  onUpdateProfile
 }: ProfileScreenProps) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState(user);
+  const [formError, setFormError] = useState("");
+  const [saving, setSaving] = useState(false);
   const registeredEvents = events.filter((event) => registrations.has(event.id));
   const favoriteEvents = events.filter((event) => favorites.has(event.id));
   const birthDateLabel = formatDate(user.birthDate);
+
+  const openEdit = () => {
+    setDraft(user);
+    setFormError("");
+    setEditing(true);
+  };
+
+  const cancelEdit = () => {
+    setDraft(user);
+    setFormError("");
+    setEditing(false);
+  };
+
+  const toggleInterest = (interest: Category) => {
+    setDraft((current) => ({
+      ...current,
+      interests: current.interests.includes(interest)
+        ? current.interests.filter((item) => item !== interest)
+        : [...current.interests, interest]
+    }));
+    setFormError("");
+  };
+
+  const saveProfile = async () => {
+    const normalizedName = draft.name.trim();
+    const normalizedCity = draft.city.trim();
+    const normalizedBio = draft.bio.trim();
+
+    if (normalizedName.length < 2) {
+      setFormError("Inserisci un nome di almeno 2 caratteri.");
+      return;
+    }
+    if (normalizedCity.length < 2) {
+      setFormError("Inserisci una citta valida.");
+      return;
+    }
+    if (draft.interests.length < 3) {
+      setFormError("Seleziona almeno 3 interessi.");
+      return;
+    }
+
+    setSaving(true);
+    const result = await onUpdateProfile({
+      ...draft,
+      name: normalizedName,
+      city: normalizedCity,
+      bio: normalizedBio
+    });
+    setSaving(false);
+
+    if (!result.ok) {
+      setFormError(result.message ?? "Non riesco ad aggiornare il profilo.");
+      return;
+    }
+
+    setEditing(false);
+    setFormError("");
+  };
+
+  if (editing) {
+    return (
+      <KeyboardAvoidingView
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
+        keyboardVerticalOffset={0}
+        style={styles.keyboard}
+      >
+        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+          <View style={styles.editHeader}>
+            <View>
+              <Text style={styles.sectionTitle}>Modifica profilo</Text>
+              <Text style={styles.editSubtitle}>Aggiorna le informazioni con cui Evnt personalizza feed e mappa.</Text>
+            </View>
+            <Pressable accessibilityLabel="Annulla modifica profilo" accessibilityRole="button" onPress={cancelEdit} style={styles.iconButton}>
+              <Ionicons color={colors.muted} name="close" size={22} />
+            </Pressable>
+          </View>
+
+          {formError ? <Text style={styles.formErrorText}>{formError}</Text> : null}
+
+          <View style={styles.editPanel}>
+            <ProfileImagePicker
+              onChange={(avatar) => setDraft((current) => ({ ...current, avatar }))}
+              value={draft.avatar}
+            />
+
+            <Field label="Nome *">
+              <TextInput
+                onChangeText={(name) => {
+                  setDraft((current) => ({ ...current, name }));
+                  setFormError("");
+                }}
+                placeholder="Il tuo nome"
+                placeholderTextColor={colors.muted}
+                style={styles.input}
+                value={draft.name}
+              />
+            </Field>
+
+            <Field label="Citta *">
+              <TextInput
+                autoCapitalize="words"
+                onChangeText={(city) => {
+                  setDraft((current) => ({ ...current, city }));
+                  setFormError("");
+                }}
+                placeholder="La tua citta"
+                placeholderTextColor={colors.muted}
+                style={styles.input}
+                value={draft.city}
+              />
+            </Field>
+
+            <Field label="Bio">
+              <TextInput
+                multiline
+                onChangeText={(bio) => setDraft((current) => ({ ...current, bio }))}
+                placeholder="Racconta qualcosa di te..."
+                placeholderTextColor={colors.muted}
+                style={[styles.input, styles.textArea]}
+                value={draft.bio}
+              />
+            </Field>
+
+            <View style={styles.fieldGroup}>
+              <Text style={styles.fieldLabel}>Interessi *</Text>
+              <View style={styles.chips}>
+                {categories.map((category) => (
+                  <CategoryChip
+                    category={category}
+                    key={category}
+                    onPress={() => toggleInterest(category)}
+                    selected={draft.interests.includes(category)}
+                  />
+                ))}
+              </View>
+            </View>
+          </View>
+
+          <View style={styles.editActions}>
+            <Pressable accessibilityRole="button" onPress={cancelEdit} style={styles.secondaryButton}>
+              <Text style={styles.secondaryButtonText}>Annulla</Text>
+            </Pressable>
+            <Pressable accessibilityRole="button" disabled={saving} onPress={saveProfile} style={styles.primaryButton}>
+              <Text style={styles.primaryButtonText}>{saving ? "Salvataggio..." : "Salva profilo"}</Text>
+            </Pressable>
+          </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+    );
+  }
 
   return (
     <ScrollView contentContainerStyle={styles.container}>
@@ -46,9 +215,14 @@ export function ProfileScreen({
           <Text style={styles.name}>{user.name}</Text>
           <Text style={styles.meta}>{user.city} · 16+ verificato</Text>
         </View>
-        <Pressable accessibilityLabel="Logout" accessibilityRole="button" onPress={onLogout} style={styles.iconButton}>
-          <Ionicons color={colors.muted} name="log-out-outline" size={22} />
-        </Pressable>
+        <View style={styles.headerActions}>
+          <Pressable accessibilityLabel="Modifica profilo" accessibilityRole="button" onPress={openEdit} style={styles.iconButton}>
+            <Ionicons color={colors.ink} name="create-outline" size={22} />
+          </Pressable>
+          <Pressable accessibilityLabel="Logout" accessibilityRole="button" onPress={onLogout} style={styles.iconButton}>
+            <Ionicons color={colors.muted} name="log-out-outline" size={22} />
+          </Pressable>
+        </View>
       </View>
 
       <Text style={styles.bio}>{user.bio}</Text>
@@ -154,6 +328,20 @@ function ProfileInfo({ icon, label, value }: ProfileInfoProps) {
   );
 }
 
+type FieldProps = {
+  children: ReactNode;
+  label: string;
+};
+
+function Field({ children, label }: FieldProps) {
+  return (
+    <View style={styles.fieldGroup}>
+      <Text style={styles.fieldLabel}>{label}</Text>
+      {children}
+    </View>
+  );
+}
+
 function formatDate(value: string) {
   const [year, month, day] = value.split("-");
   if (!year || !month || !day) {
@@ -164,6 +352,9 @@ function formatDate(value: string) {
 }
 
 const styles = StyleSheet.create({
+  keyboard: {
+    flex: 1
+  },
   container: {
     gap: spacing.lg,
     padding: spacing.lg,
@@ -194,6 +385,10 @@ const styles = StyleSheet.create({
   },
   profileCopy: {
     flex: 1
+  },
+  headerActions: {
+    flexDirection: "row",
+    gap: spacing.sm
   },
   name: {
     color: colors.ink,
@@ -226,6 +421,95 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm
+  },
+  editHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between"
+  },
+  editSubtitle: {
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 20,
+    marginTop: spacing.xs
+  },
+  formErrorText: {
+    backgroundColor: colors.roseSoft,
+    borderColor: "#F3B7B7",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 18,
+    padding: spacing.sm
+  },
+  editPanel: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    gap: spacing.lg,
+    padding: spacing.lg,
+    ...shadow
+  },
+  fieldGroup: {
+    gap: spacing.sm
+  },
+  fieldLabel: {
+    color: colors.ink,
+    fontSize: 15,
+    fontWeight: "900"
+  },
+  input: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    color: colors.ink,
+    fontSize: 16,
+    minHeight: 56,
+    paddingHorizontal: spacing.md
+  },
+  textArea: {
+    minHeight: 116,
+    paddingTop: spacing.md,
+    textAlignVertical: "top"
+  },
+  editActions: {
+    flexDirection: "row",
+    gap: spacing.md
+  },
+  primaryButton: {
+    alignItems: "center",
+    backgroundColor: colors.primary,
+    borderRadius: radius.md,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 54,
+    paddingHorizontal: spacing.md
+  },
+  primaryButtonText: {
+    color: colors.surface,
+    fontSize: 15,
+    fontWeight: "900"
+  },
+  secondaryButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    justifyContent: "center",
+    minHeight: 54,
+    paddingHorizontal: spacing.lg
+  },
+  secondaryButtonText: {
+    color: colors.ink,
+    fontSize: 15,
+    fontWeight: "900"
   },
   stats: {
     backgroundColor: colors.surface,

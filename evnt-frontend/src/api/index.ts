@@ -44,6 +44,7 @@ export type CreateEventPayload = {
   image?: string;
   tags?: string[];
   isLive?: boolean;
+  subcategory?: string;
 };
 
 export type ChatMessage = {
@@ -51,7 +52,15 @@ export type ChatMessage = {
   eventId: number;
   text: string;
   sentAt: string;
-  sender: { id: number; name: string; image?: string };
+  sender: { id: number; email?: string; name: string; image?: string };
+};
+
+export type UserSearchResult = {
+  id: number;
+  email: string;
+  name: string;
+  city: string;
+  avatar?: string;
 };
 
 export type Notification = {
@@ -184,6 +193,13 @@ export const api = {
     apiRequest<{ user: UserProfile & { id: number } }>("/me", { method: "PUT", body: payload }).then(
       (r) => r.user
     ),
+
+  searchUserByEmail: (email: string) => {
+    const params = new URLSearchParams({ email });
+    return apiRequest<{ user: UserSearchResult | null }>(`/users/search?${params.toString()}`).then(
+      (r) => r.user
+    );
+  },
 
   // ---- Notifications ----
   notifications: () =>

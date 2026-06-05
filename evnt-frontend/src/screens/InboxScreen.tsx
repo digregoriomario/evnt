@@ -12,7 +12,7 @@ import {
   View
 } from "react-native";
 
-import { api, type ChatMessage } from "../api";
+import { api, type ChatMessage, type UserSearchResult } from "../api";
 import { categoryColors, categoryEmojis, categorySoftColors, getEventSubcategoryLabel } from "../data/events";
 import { PillButton } from "../components/PillButton";
 import { colors, radius, shadow, spacing } from "../theme";
@@ -35,6 +35,8 @@ type DisplayMessage = {
   id: string;
   text: string;
   sentAt: string;
+  senderEmail?: string;
+  senderId?: string;
   senderName: string;
   mine: boolean;
   pending?: boolean;
@@ -43,13 +45,13 @@ type DisplayMessage = {
 
 type DirectChat = {
   id: string;
+  email: string;
   name: string;
   status: string;
   accent: string;
   soft: string;
   city: string;
   interests: string[];
-  mutual: string;
 };
 
 type ChatRowProps = {
@@ -67,54 +69,54 @@ type ChatRowProps = {
 
 const contactProfiles: DirectChat[] = [
   {
-    id: "anna",
+    id: "anna.rossi@evnt.app",
+    email: "anna.rossi@evnt.app",
     name: "Anna",
     status: "Sta partecipando a Sunset Jam",
     accent: "#0891B2",
     soft: "#EAFBFF",
     city: "Salerno",
-    interests: ["Concerti", "Serate"],
-    mutual: "2 eventi in comune"
+    interests: ["Concerti", "Serate"]
   },
   {
-    id: "luca",
+    id: "luca.verdi@evnt.app",
+    email: "luca.verdi@evnt.app",
     name: "Luca",
     status: "Compagno di calcetto",
     accent: "#16A34A",
     soft: "#ECFDF3",
     city: "Salerno",
-    interests: ["Sport", "Social"],
-    mutual: "1 amico in comune"
+    interests: ["Sport", "Social"]
   },
   {
-    id: "sofia",
+    id: "sofia.bianchi@evnt.app",
+    email: "sofia.bianchi@evnt.app",
     name: "Sofia",
     status: "Food tour e serate social",
     accent: "#EA580C",
     soft: "#FFF4E8",
     city: "Cava de' Tirreni",
-    interests: ["Food", "Social"],
-    mutual: "Ha partecipato a 2 eventi simili"
+    interests: ["Food", "Social"]
   },
   {
-    id: "marco",
+    id: "marco.neri@evnt.app",
+    email: "marco.neri@evnt.app",
     name: "Marco",
     status: "Cerca gruppo per basket",
     accent: "#2563EB",
     soft: "#EEF5FF",
     city: "Salerno",
-    interests: ["Sport", "Tech"],
-    mutual: "Vicino a te"
+    interests: ["Sport", "Tech"]
   },
   {
-    id: "giulia",
+    id: "giulia.russo@evnt.app",
+    email: "giulia.russo@evnt.app",
     name: "Giulia",
     status: "Mostre, teatro e aperitivi",
     accent: "#C026D3",
     soft: "#FDF0FF",
     city: "Vietri sul Mare",
-    interests: ["Arte", "Serate"],
-    mutual: "3 interessi compatibili"
+    interests: ["Arte", "Serate"]
   }
 ];
 
@@ -122,13 +124,48 @@ const isBackendEventId = (id: string) => /^\d+$/.test(id);
 
 const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60 * 1000).toISOString();
 
+const normalizedEmail = (value: string) => value.trim().toLowerCase();
+
+const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+function emailFromName(name: string) {
+  const slug = name
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ".")
+    .replace(/^\.|\.$/g, "");
+
+  return `${slug || "utente"}@evnt.app`;
+}
+
+function profileMapFromContacts(contacts: DirectChat[]) {
+  return contacts.reduce<Record<string, DirectChat>>((acc, contact) => {
+    acc[contact.id] = contact;
+    return acc;
+  }, {});
+}
+
+function profileFromUser(user: UserSearchResult): DirectChat {
+  return {
+    id: normalizedEmail(user.email),
+    email: normalizedEmail(user.email),
+    name: user.name,
+    status: "Conversazione privata",
+    accent: colors.primary,
+    soft: colors.surfaceMuted,
+    city: user.city || "Citta non indicata",
+    interests: []
+  };
+}
+
 function createInitialDirectMessages(userName: string): Record<string, DisplayMessage[]> {
   return {
-    anna: [
+    "anna.rossi@evnt.app": [
       {
         id: "anna-1",
         text: "Ci vediamo direttamente al molo?",
         sentAt: minutesAgo(54),
+        senderEmail: "anna.rossi@evnt.app",
         senderName: "Anna",
         mine: false
       },
@@ -140,20 +177,22 @@ function createInitialDirectMessages(userName: string): Record<string, DisplayMe
         mine: true
       }
     ],
-    luca: [
+    "luca.verdi@evnt.app": [
       {
         id: "luca-1",
-        text: "Ho due amici interessati al calcetto.",
+        text: "Ho altre due persone interessate al calcetto.",
         sentAt: minutesAgo(96),
+        senderEmail: "luca.verdi@evnt.app",
         senderName: "Luca",
         mine: false
       }
     ],
-    sofia: [
+    "sofia.bianchi@evnt.app": [
       {
         id: "sofia-1",
         text: "Per il food tour passo dal centro.",
         sentAt: minutesAgo(1440),
+        senderEmail: "sofia.bianchi@evnt.app",
         senderName: "Sofia",
         mine: false
       }
@@ -173,6 +212,7 @@ function createEventSeedMessages(events: EvntEvent[], userName: string): Record<
         id: `${event.id}-seed-organizer`,
         text: firstText,
         sentAt: minutesAgo(150 + index * 19),
+        senderEmail: emailFromName(event.organizer),
         senderName: event.organizer,
         mine: event.organizer.toLowerCase() === userName.toLowerCase()
       }
@@ -183,6 +223,7 @@ function createEventSeedMessages(events: EvntEvent[], userName: string): Record<
         id: `${event.id}-seed-community`,
         text: "Io ci sono, qualcuno vuole incontrarsi prima?",
         sentAt: minutesAgo(46 + index * 7),
+        senderEmail: "community@evnt.app",
         senderName: "Community Evnt",
         mine: false
       });
@@ -198,6 +239,8 @@ function mapApiMessage(message: ChatMessage, user: UserProfile): DisplayMessage 
     id: `api-${message.id}`,
     text: message.text,
     sentAt: message.sentAt,
+    senderEmail: message.sender.email,
+    senderId: String(message.sender.id),
     senderName: message.sender.name,
     mine: user.id ? message.sender.id === user.id : message.sender.name === user.name
   };
@@ -258,9 +301,17 @@ export function InboxScreen({
   );
   const [loadingEventId, setLoadingEventId] = useState<string | null>(null);
   const [sendingEventId, setSendingEventId] = useState<string | null>(null);
-  const [friendsOpen, setFriendsOpen] = useState(false);
-  const [friendSearch, setFriendSearch] = useState("");
-  const [friendIds, setFriendIds] = useState<Set<string>>(() => new Set(["anna", "luca"]));
+  const [peopleOpen, setPeopleOpen] = useState(false);
+  const [peopleSearch, setPeopleSearch] = useState("");
+  const [peopleSearching, setPeopleSearching] = useState(false);
+  const [peopleSearchError, setPeopleSearchError] = useState("");
+  const [peopleSearchResult, setPeopleSearchResult] = useState<DirectChat | null>(null);
+  const [directProfiles, setDirectProfiles] = useState<Record<string, DirectChat>>(() =>
+    profileMapFromContacts(contactProfiles)
+  );
+  const [directChatIds, setDirectChatIds] = useState<Set<string>>(
+    () => new Set(Object.keys(createInitialDirectMessages(user.name)))
+  );
 
   const seededEventMessages = useMemo(
     () => createEventSeedMessages(events, user.name),
@@ -273,7 +324,7 @@ export function InboxScreen({
       : undefined;
   const selectedDirect =
     selectedTarget?.type === "direct"
-      ? contactProfiles.find((chat) => chat.id === selectedTarget.id)
+      ? directProfiles[selectedTarget.id]
       : undefined;
 
   const selectedMessages = selectedEvent
@@ -317,8 +368,9 @@ export function InboxScreen({
 
   const directRows = useMemo(
     () =>
-      contactProfiles
-        .filter((chat) => friendIds.has(chat.id))
+      [...directChatIds]
+        .map((chatId) => directProfiles[chatId])
+        .filter((chat): chat is DirectChat => Boolean(chat))
         .map((chat) => {
           const messages = directMessageMap[chat.id] ?? [];
           const last = messages[messages.length - 1];
@@ -333,15 +385,15 @@ export function InboxScreen({
             return true;
           }
 
-          return [chat.name, chat.status, preview].join(" ").toLowerCase().includes(query);
+          return [chat.name, chat.email, chat.status, preview].join(" ").toLowerCase().includes(query);
         }),
-    [directMessageMap, friendIds, query]
+    [directChatIds, directMessageMap, directProfiles, query]
   );
 
   const selectedTitle = selectedEvent?.title ?? selectedDirect?.name ?? "";
   const selectedSubtitle = selectedEvent
     ? `${selectedEvent.chatMode} · ${selectedEvent.participants} partecipanti`
-    : selectedDirect?.status ?? "";
+    : selectedDirect?.email ?? "";
   const selectedAccent = selectedEvent
     ? categoryColors[selectedEvent.category]
     : selectedDirect?.accent ?? colors.primary;
@@ -359,6 +411,76 @@ export function InboxScreen({
       setSelectedTarget({ type: "event", id: initialEventId });
     }
   }, [initialEventId]);
+
+  useEffect(() => {
+    if (!peopleOpen) {
+      return;
+    }
+
+    const email = normalizedEmail(peopleSearch);
+    setPeopleSearchResult(null);
+    setPeopleSearchError("");
+
+    if (!email) {
+      setPeopleSearching(false);
+      return;
+    }
+
+    if (!emailPattern.test(email)) {
+      setPeopleSearching(false);
+      setPeopleSearchError("Inserisci un'email completa per cercare un utente.");
+      return;
+    }
+
+    if (email === normalizedEmail(user.email)) {
+      setPeopleSearching(false);
+      setPeopleSearchError("Non puoi avviare una chat con te stesso.");
+      return;
+    }
+
+    const localProfile = directProfiles[email] ?? contactProfiles.find((contact) => contact.email === email);
+    if (localProfile) {
+      setPeopleSearching(false);
+      setPeopleSearchResult(localProfile);
+      return;
+    }
+
+    if (!online) {
+      setPeopleSearching(false);
+      setPeopleSearchError("Utente non trovato tra i profili disponibili offline.");
+      return;
+    }
+
+    let cancelled = false;
+    setPeopleSearching(true);
+    const timeout = setTimeout(() => {
+      api
+        .searchUserByEmail(email)
+        .then((foundUser) => {
+          if (cancelled) {
+            return;
+          }
+
+          setPeopleSearchResult(foundUser ? profileFromUser(foundUser) : null);
+          setPeopleSearchError(foundUser ? "" : "Nessun utente trovato con questa email.");
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setPeopleSearchError("Non riesco a cercare utenti adesso.");
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setPeopleSearching(false);
+          }
+        });
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [directProfiles, online, peopleOpen, peopleSearch, user.email]);
 
   useEffect(() => {
     if (!selectedEvent || !online || !isBackendEventId(selectedEvent.id)) {
@@ -397,20 +519,46 @@ export function InboxScreen({
     setSelectedTarget(target);
   };
 
-  const openFriendChat = (chatId: string) => {
-    if (!friendIds.has(chatId)) {
-      return;
-    }
-    setFriendsOpen(false);
-    openTarget({ type: "direct", id: chatId });
-  };
+  const startDirectChat = (chat: DirectChat) => {
+    const chatId = normalizedEmail(chat.email);
+    const normalizedChat = { ...chat, id: chatId, email: chatId };
 
-  const addFriend = (chatId: string) => {
-    setFriendIds((current) => {
+    setDirectProfiles((current) => ({ ...current, [chatId]: normalizedChat }));
+    setDirectChatIds((current) => {
       const next = new Set(current);
       next.add(chatId);
       return next;
     });
+    setPeopleOpen(false);
+    setPeopleSearch("");
+    setPeopleSearchResult(null);
+    setPeopleSearchError("");
+    openTarget({ type: "direct", id: chatId });
+  };
+
+  const directContactFromMessage = (message: DisplayMessage) => {
+    if (message.mine) {
+      return null;
+    }
+
+    const email = normalizedEmail(message.senderEmail ?? emailFromName(message.senderName));
+    return directProfiles[email] ?? {
+      id: email,
+      email,
+      name: message.senderName,
+      status: "Conversazione privata",
+      accent: colors.primary,
+      soft: colors.surfaceMuted,
+      city: "Citta non indicata",
+      interests: []
+    };
+  };
+
+  const openDirectFromMessage = (message: DisplayMessage) => {
+    const contact = directContactFromMessage(message);
+    if (contact) {
+      startDirectChat(contact);
+    }
   };
 
   const closeConversation = () => {
@@ -504,7 +652,7 @@ export function InboxScreen({
   if (selectedTarget && (selectedEvent || selectedDirect)) {
     return (
       <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : undefined}
+        behavior={Platform.OS === "ios" ? "padding" : "height"}
         style={styles.chatRoot}
       >
         <View style={styles.chatHeader}>
@@ -567,7 +715,11 @@ export function InboxScreen({
             </View>
           ) : (
             selectedMessages.map((message) => (
-              <MessageBubble key={message.id} message={message} />
+              <MessageBubble
+                key={message.id}
+                message={message}
+                onAuthorPress={selectedEvent && !message.mine ? () => openDirectFromMessage(message) : undefined}
+              />
             ))
           )}
         </ScrollView>
@@ -608,12 +760,12 @@ export function InboxScreen({
         <View style={styles.header}>
           <View>
             <Text style={styles.title}>Chat</Text>
-            <Text style={styles.subtitle}>Gruppi evento e amici.</Text>
+            <Text style={styles.subtitle}>Gruppi evento e conversazioni private.</Text>
           </View>
           <Pressable
-            accessibilityLabel="Gestisci amici"
+            accessibilityLabel="Avvia nuova chat privata"
             accessibilityRole="button"
-            onPress={() => setFriendsOpen(true)}
+            onPress={() => setPeopleOpen(true)}
             style={styles.headerIcon}
           >
             <Ionicons color={colors.ink} name="person-add-outline" size={22} />
@@ -637,17 +789,17 @@ export function InboxScreen({
         </View>
 
         <Pressable
-          accessibilityLabel="Apri rubrica amici"
+          accessibilityLabel="Avvia chat cercando una persona tramite email"
           accessibilityRole="button"
-          onPress={() => setFriendsOpen(true)}
+          onPress={() => setPeopleOpen(true)}
           style={styles.friendShortcut}
         >
           <View style={styles.friendShortcutIcon}>
             <Ionicons color={colors.primary} name="people-outline" size={22} />
           </View>
           <View style={styles.friendShortcutCopy}>
-            <Text style={styles.friendShortcutTitle}>Amici</Text>
-            <Text style={styles.friendShortcutText}>Aggiungi persone compatibili e avvia conversazioni private.</Text>
+            <Text style={styles.friendShortcutTitle}>Nuova chat</Text>
+            <Text style={styles.friendShortcutText}>Cerca una persona tramite email e avvia una conversazione privata.</Text>
           </View>
           <Ionicons color={colors.muted} name="chevron-forward" size={20} />
         </Pressable>
@@ -675,7 +827,7 @@ export function InboxScreen({
         </View>
 
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Amici</Text>
+          <Text style={styles.sectionTitle}>Chat private</Text>
           {directRows.length ? (
             directRows.map(({ chat, preview, time }) => (
               <ChatRow
@@ -691,87 +843,76 @@ export function InboxScreen({
               />
             ))
           ) : (
-            <Text style={styles.emptyListText}>Aggiungi amici dalla rubrica per iniziare una chat privata.</Text>
+            <Text style={styles.emptyListText}>Cerca una persona tramite email per iniziare una chat privata.</Text>
           )}
         </View>
       </ScrollView>
 
-      <FriendPickerModal
-        contacts={contactProfiles}
-        friendIds={friendIds}
-        onAddFriend={addFriend}
-        onClose={() => setFriendsOpen(false)}
-        onSearchChange={setFriendSearch}
-        onSelect={openFriendChat}
-        search={friendSearch}
-        visible={friendsOpen}
+      <PeoplePickerModal
+        error={peopleSearchError}
+        onClose={() => setPeopleOpen(false)}
+        onSearchChange={setPeopleSearch}
+        onStartChat={startDirectChat}
+        result={peopleSearchResult}
+        search={peopleSearch}
+        searching={peopleSearching}
+        visible={peopleOpen}
       />
     </>
   );
 }
 
-type FriendPickerModalProps = {
-  contacts: DirectChat[];
-  friendIds: Set<string>;
-  onAddFriend: (chatId: string) => void;
+type PeoplePickerModalProps = {
+  error: string;
   onClose: () => void;
   onSearchChange: (value: string) => void;
-  onSelect: (chatId: string) => void;
+  onStartChat: (chat: DirectChat) => void;
+  result: DirectChat | null;
   search: string;
+  searching: boolean;
   visible: boolean;
 };
 
-function FriendPickerModal({
-  contacts,
-  friendIds,
-  onAddFriend,
+function PeoplePickerModal({
+  error,
   onClose,
   onSearchChange,
-  onSelect,
+  onStartChat,
+  result,
   search,
+  searching,
   visible
-}: FriendPickerModalProps) {
-  const normalized = search.trim().toLowerCase();
-  const filteredContacts = contacts.filter((contact) => {
-    if (!normalized) {
-      return true;
-    }
-
-    return [contact.name, contact.status, contact.city, contact.interests.join(" ")]
-      .join(" ")
-      .toLowerCase()
-      .includes(normalized);
-  });
-  const friends = filteredContacts.filter((contact) => friendIds.has(contact.id));
-  const suggestions = filteredContacts.filter((contact) => !friendIds.has(contact.id));
-
+}: PeoplePickerModalProps) {
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
       <View style={styles.modalOverlay}>
-        <View style={styles.friendSheet}>
+        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.peopleSheet}>
           <View style={styles.friendHeader}>
             <View>
-              <Text style={styles.friendTitle}>Amici</Text>
-              <Text style={styles.friendSubtitle}>Aggiungi persone e scegli con chi parlare.</Text>
+              <Text style={styles.friendTitle}>Nuova chat</Text>
+              <Text style={styles.friendSubtitle}>Cerca una persona usando la sua email.</Text>
             </View>
-            <Pressable accessibilityLabel="Chiudi rubrica amici" accessibilityRole="button" onPress={onClose} style={styles.friendClose}>
+            <Pressable accessibilityLabel="Chiudi ricerca persone" accessibilityRole="button" onPress={onClose} style={styles.friendClose}>
               <Ionicons color={colors.ink} name="close" size={22} />
             </Pressable>
           </View>
 
           <View style={styles.friendSearchBox}>
-            <Ionicons color={colors.muted} name="search-outline" size={19} />
+            <Ionicons color={colors.muted} name="mail-outline" size={19} />
             <TextInput
               autoCapitalize="none"
+              autoComplete="email"
+              keyboardType="email-address"
               onChangeText={onSearchChange}
-              placeholder="Cerca persone"
+              placeholder="email@dominio.it"
               placeholderTextColor={colors.muted}
               style={styles.friendSearchInput}
+              textContentType="emailAddress"
               value={search}
             />
             {search ? (
               <Pressable
-                accessibilityLabel="Cancella ricerca amici"
+                accessibilityLabel="Cancella ricerca persone"
                 accessibilityRole="button"
                 onPress={() => onSearchChange("")}
               >
@@ -780,51 +921,33 @@ function FriendPickerModal({
             ) : null}
           </View>
 
-          <ScrollView contentContainerStyle={styles.friendList} keyboardShouldPersistTaps="handled">
-            <Text style={styles.friendSectionTitle}>I tuoi amici</Text>
-            {friends.length ? (
-              friends.map((chat) => (
-                <FriendRow
-                  actionLabel="Scrivi"
-                  chat={chat}
-                  icon="chatbubble-ellipses-outline"
-                  key={chat.id}
-                  onPress={() => onSelect(chat.id)}
-                />
-              ))
-            ) : (
-              <Text style={styles.emptyListText}>Nessun amico trovato con questa ricerca.</Text>
-            )}
-
-            <Text style={styles.friendSectionTitle}>Persone suggerite</Text>
-            {suggestions.length ? (
-              suggestions.map((chat) => (
-                <FriendRow
-                  actionLabel="Aggiungi"
-                  chat={chat}
-                  icon="person-add-outline"
-                  key={chat.id}
-                  onPress={() => onAddFriend(chat.id)}
-                />
-              ))
-            ) : (
-              <Text style={styles.emptyListText}>Non ci sono altri suggerimenti.</Text>
-            )}
-          </ScrollView>
-        </View>
+          {searching ? <Text style={styles.emptyListText}>Cerco utente...</Text> : null}
+          {error ? <Text style={styles.peopleErrorText}>{error}</Text> : null}
+          {!search && !searching ? (
+            <Text style={styles.emptyListText}>Inserisci un'email per trovare la persona con cui parlare.</Text>
+          ) : null}
+          {result ? (
+            <PersonRow
+              actionLabel="Avvia chat"
+              chat={result}
+              icon="chatbubble-ellipses-outline"
+              onPress={() => onStartChat(result)}
+            />
+          ) : null}
+        </KeyboardAvoidingView>
       </View>
     </Modal>
   );
 }
 
-type FriendRowProps = {
+type PersonRowProps = {
   actionLabel: string;
   chat: DirectChat;
   icon: keyof typeof Ionicons.glyphMap;
   onPress: () => void;
 };
 
-function FriendRow({ actionLabel, chat, icon, onPress }: FriendRowProps) {
+function PersonRow({ actionLabel, chat, icon, onPress }: PersonRowProps) {
   return (
     <View style={styles.friendRow}>
       <View style={[styles.friendAvatar, { backgroundColor: chat.soft, borderColor: chat.accent }]}>
@@ -832,8 +955,8 @@ function FriendRow({ actionLabel, chat, icon, onPress }: FriendRowProps) {
       </View>
       <View style={styles.friendCopy}>
         <Text style={styles.friendName}>{chat.name}</Text>
-        <Text style={styles.friendStatus}>{chat.status}</Text>
-        <Text style={styles.friendMeta}>{chat.city} · {chat.mutual}</Text>
+        <Text style={styles.friendStatus}>{chat.email}</Text>
+        <Text style={styles.friendMeta}>{chat.city} · {chat.status}</Text>
       </View>
       <Pressable
         accessibilityLabel={`${actionLabel} a ${chat.name}`}
@@ -891,11 +1014,29 @@ function ChatRow({
   );
 }
 
-function MessageBubble({ message }: { message: DisplayMessage }) {
+function MessageBubble({
+  message,
+  onAuthorPress
+}: {
+  message: DisplayMessage;
+  onAuthorPress?: () => void;
+}) {
   return (
     <View style={[styles.bubbleRow, message.mine && styles.bubbleRowMine]}>
       <View style={[styles.bubble, message.mine ? styles.bubbleMine : styles.bubbleOther]}>
-        {!message.mine ? <Text style={styles.bubbleAuthor}>{message.senderName}</Text> : null}
+        {!message.mine ? (
+          onAuthorPress ? (
+            <Pressable
+              accessibilityLabel={`Avvia chat con ${message.senderName}`}
+              accessibilityRole="button"
+              onPress={onAuthorPress}
+            >
+              <Text style={[styles.bubbleAuthor, styles.bubbleAuthorLink]}>{message.senderName}</Text>
+            </Pressable>
+          ) : (
+            <Text style={styles.bubbleAuthor}>{message.senderName}</Text>
+          )
+        ) : null}
         <Text style={[styles.bubbleText, message.mine && styles.bubbleTextMine]}>{message.text}</Text>
         <Text style={[styles.bubbleMeta, message.mine && styles.bubbleMetaMine]}>
           {formatChatTime(message.sentAt)}
@@ -1090,6 +1231,15 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     paddingBottom: spacing.xxl
   },
+  peopleSheet: {
+    backgroundColor: colors.background,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
+    gap: spacing.md,
+    maxHeight: "82%",
+    padding: spacing.lg,
+    paddingBottom: spacing.xxl
+  },
   friendHeader: {
     alignItems: "center",
     flexDirection: "row",
@@ -1137,6 +1287,17 @@ const styles = StyleSheet.create({
   friendList: {
     gap: spacing.sm,
     paddingBottom: spacing.lg
+  },
+  peopleErrorText: {
+    backgroundColor: colors.roseSoft,
+    borderColor: "#F3B7B7",
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: "800",
+    lineHeight: 18,
+    padding: spacing.sm
   },
   friendSectionTitle: {
     color: colors.ink,
@@ -1319,6 +1480,10 @@ const styles = StyleSheet.create({
     fontSize: 11,
     fontWeight: "900",
     marginBottom: 3
+  },
+  bubbleAuthorLink: {
+    color: colors.primary,
+    textDecorationLine: "underline"
   },
   bubbleText: {
     color: colors.ink,

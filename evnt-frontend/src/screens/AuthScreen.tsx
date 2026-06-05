@@ -410,7 +410,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
   };
 
   return (
-    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : undefined} style={styles.keyboard}>
+    <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboard}>
       <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
         {authView === "welcome" ? (
           <View style={styles.welcome}>

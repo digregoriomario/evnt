@@ -4,7 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { asyncHandler, HttpError } from "../utils/http";
 import { authOptional, authRequired } from "../middleware/auth";
-import { labelToChatType, serializeEvent } from "../utils/serialize";
+import { labelToChatType, serializeEvent, subcategoryTagPrefix } from "../utils/serialize";
 
 export const eventsRouter = Router();
 
@@ -50,6 +50,49 @@ const listQuery = z.object({
   lat: z.coerce.number().optional(),
   lng: z.coerce.number().optional()
 });
+
+const knownCategoryTaxonomy: Record<string, { icon: string; interest: string }> = {
+  Arte: { icon: "🎨", interest: "Cultura" },
+  Benessere: { icon: "🧘", interest: "Benessere" },
+  Cinema: { icon: "🎬", interest: "Cinema" },
+  Concerto: { icon: "🎸", interest: "Musica" },
+  Food: { icon: "🍔", interest: "Gastronomia" },
+  Gaming: { icon: "🎮", interest: "Gaming" },
+  Serata: { icon: "🌙", interest: "Nightlife" },
+  Social: { icon: "🤝", interest: "Socialità" },
+  Sport: { icon: "⚽", interest: "Sport" },
+  Tech: { icon: "💻", interest: "Tecnologia" },
+  Viaggi: { icon: "🧳", interest: "Viaggi" }
+};
+
+async function findOrCreateCategory(name: string) {
+  const category = await prisma.category.findUnique({ where: { name } });
+  if (category) return category;
+
+  const fallback = knownCategoryTaxonomy[name];
+  if (!fallback) throw new HttpError(400, `Categoria sconosciuta: ${name}`);
+
+  const interest = await prisma.interest.upsert({
+    where: { name: fallback.interest },
+    create: { name: fallback.interest },
+    update: {}
+  });
+
+  return prisma.category.create({
+    data: { name, iconCategory: fallback.icon, interestId: interest.id }
+  });
+}
+
+function normalizeEventTags(tags: string[], subcategory?: string) {
+  const publicTags = tags
+    .map((tag) => tag.trim())
+    .filter((tag) => tag && !tag.startsWith(subcategoryTagPrefix));
+  const normalizedSubcategory = subcategory?.trim();
+
+  return normalizedSubcategory
+    ? [...publicTags, `${subcategoryTagPrefix}${normalizedSubcategory}`]
+    : publicTags;
+}
 
 // GET /events
 eventsRouter.get(
@@ -140,7 +183,8 @@ const createSchema = z.object({
   chatMode: z.string().optional(),
   image: z.string().url().optional(),
   tags: z.array(z.string()).default([]),
-  isLive: z.boolean().optional()
+  isLive: z.boolean().optional(),
+  subcategory: z.string().trim().min(1).max(50).optional()
 });
 
 // POST /events
@@ -149,8 +193,7 @@ eventsRouter.post(
   authRequired,
   asyncHandler(async (req, res) => {
     const body = createSchema.parse(req.body);
-    const category = await prisma.category.findUnique({ where: { name: body.category } });
-    if (!category) throw new HttpError(400, `Categoria sconosciuta: ${body.category}`);
+    const category = await findOrCreateCategory(body.category);
 
     const event = await prisma.event.create({
       data: {
@@ -165,7 +208,7 @@ eventsRouter.post(
         categoryId: category.id,
         chatType: labelToChatType(body.chatMode),
         image: body.image,
-        tags: body.tags,
+        tags: normalizeEventTags(body.tags, body.subcategory),
         isLive: body.isLive ?? false,
         creatorId: req.userId!,
         // creator auto-joins their own event
@@ -191,10 +234,13 @@ eventsRouter.put(
     const body = createSchema.partial().parse(req.body);
     let categoryId: number | undefined;
     if (body.category) {
-      const category = await prisma.category.findUnique({ where: { name: body.category } });
-      if (!category) throw new HttpError(400, `Categoria sconosciuta: ${body.category}`);
+      const category = await findOrCreateCategory(body.category);
       categoryId = category.id;
     }
+    const tags =
+      body.tags || body.subcategory
+        ? normalizeEventTags(body.tags ?? existing.tags, body.subcategory)
+        : undefined;
 
     const event = await prisma.event.update({
       where: { id },
@@ -210,7 +256,7 @@ eventsRouter.put(
         categoryId,
         chatType: body.chatMode ? labelToChatType(body.chatMode) : undefined,
         image: body.image,
-        tags: body.tags,
+        tags,
         isLive: body.isLive
       },
       include: eventInclude
@@ -309,7 +355,7 @@ eventsRouter.get(
     const messages = await prisma.chatMessage.findMany({
       where: { eventId },
       orderBy: { sentAt: "asc" },
-      include: { sender: { select: { id: true, name: true, image: true } } }
+      include: { sender: { select: { id: true, name: true, email: true, image: true } } }
     });
     res.json({
       messages: messages.map((m) => ({
@@ -317,7 +363,12 @@ eventsRouter.get(
         eventId: m.eventId,
         text: m.text,
         sentAt: m.sentAt.toISOString(),
-        sender: { id: m.sender.id, name: m.sender.name, image: m.sender.image ?? undefined }
+        sender: {
+          id: m.sender.id,
+          email: m.sender.email,
+          name: m.sender.name,
+          image: m.sender.image ?? undefined
+        }
       }))
     });
   })
@@ -338,7 +389,7 @@ eventsRouter.post(
     }
     const message = await prisma.chatMessage.create({
       data: { eventId, senderId: req.userId!, text },
-      include: { sender: { select: { id: true, name: true, image: true } } }
+      include: { sender: { select: { id: true, name: true, email: true, image: true } } }
     });
     res.status(201).json({
       message: {
@@ -346,7 +397,12 @@ eventsRouter.post(
         eventId,
         text: message.text,
         sentAt: message.sentAt.toISOString(),
-        sender: { id: message.sender.id, name: message.sender.name, image: message.sender.image ?? undefined }
+        sender: {
+          id: message.sender.id,
+          email: message.sender.email,
+          name: message.sender.name,
+          image: message.sender.image ?? undefined
+        }
       }
     });
   })

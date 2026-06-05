@@ -1,22 +1,50 @@
 import { Ionicons } from "@expo/vector-icons";
 import { ReactNode, useEffect, useMemo, useState } from "react";
-import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import {
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
+} from "react-native";
 
 import { distanceBetweenKm, searchPlacesWorldwide } from "../api/geocoding";
 import { DateTimePickerField } from "../components/DateTimePickerField";
 import { PillButton } from "../components/PillButton";
 import { findCitySuggestion } from "../data/cities";
-import { categoryColors, categoryDefaultImages, categorySoftColors, eventSubcategories } from "../data/events";
+import {
+  categoryColors,
+  categoryDefaultImages,
+  categorySoftColors,
+  eventSubcategories,
+  getEventSubcategoryLabel
+} from "../data/events";
 import { placeSuggestions, type PlaceSuggestion } from "../data/places";
 import { colors, radius, shadow, spacing } from "../theme";
 import { Category, ChatMode, EvntEvent, UserProfile } from "../types";
 
 type CreateEventScreenProps = {
+  initialEvent?: EvntEvent;
+  onCancel?: () => void;
   user: UserProfile;
   onCreate: (event: EvntEvent) => void;
+  onUpdate?: (event: EvntEvent) => void;
 };
 
-type CreateField = "address" | "capacity" | "date" | "description" | "place" | "price" | "time" | "title";
+type CreateField =
+  | "address"
+  | "capacity"
+  | "date"
+  | "description"
+  | "place"
+  | "price"
+  | "subcategory"
+  | "time"
+  | "title";
 type CreateFieldErrors = Partial<Record<CreateField, string>>;
 
 type EventTypeOption = {
@@ -32,15 +60,21 @@ const eventTypes: EventTypeOption[] = [
   { emoji: "🍔", label: "Food", category: "Food" },
   { emoji: "🤝", label: "Social", category: "Social" },
   { emoji: "🎨", label: "Arte", category: "Arte" },
-  { emoji: "💻", label: "Tech", category: "Tech" }
+  { emoji: "💻", label: "Tech", category: "Tech" },
+  { emoji: "🧘", label: "Benessere", category: "Benessere" },
+  { emoji: "🧳", label: "Viaggi", category: "Viaggi" },
+  { emoji: "🎮", label: "Gaming", category: "Gaming" },
+  { emoji: "🎬", label: "Cinema", category: "Cinema" }
 ];
 
 const createPrimary = "#5A4BC4";
 const createPrimarySoft = "#F0EEFF";
+const customSubcategoryOption = "Altro";
 const dayNames = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
 const monthNames = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
 const maxTitleLength = 90;
 const maxDescriptionLength = 500;
+const maxCustomSubcategoryLength = 50;
 const maxAddressLength = 180;
 const maxCapacity = 10000;
 const maxPrice = 10000;
@@ -91,24 +125,44 @@ function hasCreateErrors(errors: CreateFieldErrors) {
   return Object.keys(errors).length > 0;
 }
 
-export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
-  const [defaultDateTime] = useState(() => getDefaultEventDateTime());
+function eventTypeForCategory(category?: Category) {
+  return eventTypes.find((item) => item.category === category) ?? eventTypes[1];
+}
+
+function dateTimeFromEvent(event?: EvntEvent) {
+  if (!event?.dateTimeIso) {
+    return getDefaultEventDateTime();
+  }
+
+  const parsed = new Date(event.dateTimeIso);
+  return Number.isNaN(parsed.getTime())
+    ? getDefaultEventDateTime()
+    : { date: toIsoDate(parsed), time: toTimeValue(parsed) };
+}
+
+export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUpdate }: CreateEventScreenProps) {
+  const editing = Boolean(initialEvent);
   const [step, setStep] = useState(0);
-  const [selectedType, setSelectedType] = useState(eventTypes[1]);
-  const [selectedSubcategory, setSelectedSubcategory] = useState(eventSubcategories[eventTypes[1].category][0]);
-  const [title, setTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [place, setPlace] = useState("");
-  const [address, setAddress] = useState("");
+  const [selectedType, setSelectedType] = useState(() => eventTypeForCategory(initialEvent?.category));
+  const [selectedSubcategory, setSelectedSubcategory] = useState(() => {
+    const type = eventTypeForCategory(initialEvent?.category);
+    return eventSubcategories[type.category][0];
+  });
+  const [customSubcategory, setCustomSubcategory] = useState("");
+  const [subcategorySelectOpen, setSubcategorySelectOpen] = useState(false);
+  const [title, setTitle] = useState(initialEvent?.title ?? "");
+  const [description, setDescription] = useState(initialEvent?.description ?? "");
+  const [place, setPlace] = useState(initialEvent?.place ?? "");
+  const [address, setAddress] = useState(initialEvent?.address ?? "");
   const [selectedPlace, setSelectedPlace] = useState<PlaceSuggestion | null>(null);
   const [placeSuggestionsOpen, setPlaceSuggestionsOpen] = useState(false);
   const [remotePlaceSuggestions, setRemotePlaceSuggestions] = useState<PlaceSuggestion[]>([]);
   const [placeSearching, setPlaceSearching] = useState(false);
-  const [date, setDate] = useState(defaultDateTime.date);
-  const [time, setTime] = useState(defaultDateTime.time);
-  const [capacity, setCapacity] = useState("");
-  const [price, setPrice] = useState("");
-  const [chatMode, setChatMode] = useState<ChatMode>("Gruppo aperto");
+  const [date, setDate] = useState(() => dateTimeFromEvent(initialEvent).date);
+  const [time, setTime] = useState(() => dateTimeFromEvent(initialEvent).time);
+  const [capacity, setCapacity] = useState(initialEvent?.capacity ? String(initialEvent.capacity) : "");
+  const [price, setPrice] = useState(initialEvent?.price ? String(initialEvent.price) : "");
+  const [chatMode, setChatMode] = useState<ChatMode>(initialEvent?.chatMode ?? "Gruppo aperto");
   const [formError, setFormError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<CreateFieldErrors>({});
 
@@ -120,12 +174,52 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
   const selectedAccent = categoryColors[selectedType.category];
   const selectedSoft = categorySoftColors[selectedType.category];
   const selectedSubcategories = eventSubcategories[selectedType.category];
+  const subcategoryOptions = useMemo(
+    () => [...selectedSubcategories, customSubcategoryOption],
+    [selectedSubcategories]
+  );
+  const selectedSubcategoryIsCustom = selectedSubcategory === customSubcategoryOption;
+  const effectiveSubcategory = selectedSubcategoryIsCustom ? customSubcategory.trim() : selectedSubcategory;
+  const subcategoryDisplay = selectedSubcategoryIsCustom
+    ? customSubcategory.trim() || customSubcategoryOption
+    : selectedSubcategory;
   const minimumEventDate = useMemo(() => new Date(), []);
   const eventDateTime = useMemo(() => localEventDateTime(date, time), [date, time]);
   const eventIsInPast = eventDateTime ? eventDateTime.getTime() < Date.now() : true;
   const originCoordinates = user.cityCoordinates ?? findCitySuggestion(user.city)?.coordinates;
 
   useEffect(() => {
+    const type = eventTypeForCategory(initialEvent?.category);
+    const nextDateTime = dateTimeFromEvent(initialEvent);
+    const nextSubcategory = initialEvent ? getEventSubcategoryLabel(initialEvent) : eventSubcategories[type.category][0];
+    const knownSubcategory = eventSubcategories[type.category].includes(nextSubcategory);
+
+    setStep(0);
+    setSelectedType(type);
+    setSelectedSubcategory(knownSubcategory ? nextSubcategory : customSubcategoryOption);
+    setCustomSubcategory(knownSubcategory ? "" : nextSubcategory);
+    setSubcategorySelectOpen(false);
+    setTitle(initialEvent?.title ?? "");
+    setDescription(initialEvent?.description ?? "");
+    setPlace(initialEvent?.place ?? "");
+    setAddress(initialEvent?.address ?? "");
+    setSelectedPlace(null);
+    setPlaceSuggestionsOpen(false);
+    setRemotePlaceSuggestions([]);
+    setPlaceSearching(false);
+    setDate(nextDateTime.date);
+    setTime(nextDateTime.time);
+    setCapacity(initialEvent?.capacity ? String(initialEvent.capacity) : "");
+    setPrice(initialEvent?.price ? String(initialEvent.price) : "");
+    setChatMode(initialEvent?.chatMode ?? "Gruppo aperto");
+    setFormError("");
+    setFieldErrors({});
+  }, [initialEvent?.id]);
+
+  useEffect(() => {
+    if (selectedSubcategory === customSubcategoryOption) {
+      return;
+    }
     if (!selectedSubcategories.includes(selectedSubcategory)) {
       setSelectedSubcategory(selectedSubcategories[0]);
     }
@@ -221,6 +315,11 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
       if (description.length > maxDescriptionLength) {
         errors.description = `La descrizione puo contenere al massimo ${maxDescriptionLength} caratteri.`;
       }
+      if (effectiveSubcategory.length < 2) {
+        errors.subcategory = "Seleziona una sottocategoria oppure scrivine una personalizzata.";
+      } else if (effectiveSubcategory.length > maxCustomSubcategoryLength) {
+        errors.subcategory = `La sottocategoria puo contenere al massimo ${maxCustomSubcategoryLength} caratteri.`;
+      }
     }
 
     if (targetStep === 1) {
@@ -272,10 +371,17 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
   };
 
   const resetForm = () => {
+    if (editing) {
+      onCancel?.();
+      return;
+    }
+
     const nextDefault = getDefaultEventDateTime();
     setStep(0);
     setSelectedType(eventTypes[1]);
     setSelectedSubcategory(eventSubcategories[eventTypes[1].category][0]);
+    setCustomSubcategory("");
+    setSubcategorySelectOpen(false);
     setTitle("");
     setDescription("");
     setPlace("");
@@ -293,36 +399,48 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
 
   const publish = () => {
     const dateTime = eventDateTime ?? new Date();
-    onCreate({
-      id: `created-${Date.now()}`,
+    const subcategory = effectiveSubcategory;
+    const event: EvntEvent = {
+      id: initialEvent?.id ?? `created-${Date.now()}`,
       title: title.trim(),
       category: selectedType.category,
       date: formatEventDateLabel(date),
       time: time.trim(),
       place: place.trim(),
-      city: selectedPlace?.city ?? user.city,
-      address: address.trim() || selectedPlace?.address || `${place.trim()}, ${user.city}`,
+      city: selectedPlace?.city ?? initialEvent?.city ?? user.city,
+      address: address.trim() || selectedPlace?.address || initialEvent?.address || `${place.trim()}, ${user.city}`,
       price: isFree ? 0 : parsedPrice,
-      distanceKm: selectedPlace?.distanceKm ?? 0.9,
-      affinity: 100,
-      popularity: 10,
-      participants: 1,
+      distanceKm: selectedPlace?.distanceKm ?? initialEvent?.distanceKm ?? 0.9,
+      affinity: initialEvent?.affinity ?? 100,
+      popularity: initialEvent?.popularity ?? 10,
+      participants: initialEvent?.participants ?? 1,
       capacity: Number.isFinite(parsedCapacity) && parsedCapacity > 0 ? parsedCapacity : null,
-      image: categoryDefaultImages[selectedType.category],
-      description: description.trim() || `${selectedSubcategory} creato da ${user.name}.`,
+      image:
+        initialEvent?.category === selectedType.category && initialEvent.image
+          ? initialEvent.image
+          : categoryDefaultImages[selectedType.category],
+      description: description.trim() || `${subcategory} creato da ${user.name}.`,
       organizer: user.name,
       chatMode,
       tags: [
         selectedType.label.toLowerCase(),
-        selectedSubcategory.toLowerCase(),
+        subcategory.toLowerCase(),
+        `subcategory:${subcategory}`,
         (selectedPlace?.city ?? user.city).toLowerCase(),
         "nuovo"
       ],
-      coordinates: selectedPlace?.coordinates ?? { latitude: 40.6782, longitude: 14.7589 },
+      coordinates: selectedPlace?.coordinates ?? initialEvent?.coordinates ?? { latitude: 40.6782, longitude: 14.7589 },
       dateTimeIso: dateTime.toISOString(),
-      subcategory: selectedSubcategory
-    });
+      status: initialEvent?.status,
+      subcategory
+    };
 
+    if (editing) {
+      onUpdate?.(event);
+      return;
+    }
+
+    onCreate(event);
     resetForm();
   };
 
@@ -371,13 +489,26 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
     setPlaceSuggestionsOpen(false);
   };
 
+  const chooseSubcategory = (value: string) => {
+    setSelectedSubcategory(value);
+    if (value !== customSubcategoryOption) {
+      setCustomSubcategory("");
+    }
+    clearFieldError("subcategory");
+    setSubcategorySelectOpen(false);
+  };
+
   return (
-    <View style={styles.root}>
+    <KeyboardAvoidingView
+      behavior={Platform.OS === "ios" ? "padding" : "height"}
+      keyboardVerticalOffset={0}
+      style={styles.root}
+    >
       <View style={styles.topBar}>
         <Pressable accessibilityLabel="Indietro" accessibilityRole="button" onPress={goBack} style={styles.backButton}>
           <Ionicons color={colors.ink} name="arrow-back" size={24} />
         </Pressable>
-        <Text style={styles.headerTitle}>Nuovo evento • {step + 1}/3</Text>
+        <Text style={styles.headerTitle}>{editing ? "Modifica evento" : "Nuovo evento"} • {step + 1}/3</Text>
         <Pressable
           accessibilityLabel="Annulla creazione evento"
           accessibilityRole="button"
@@ -414,6 +545,7 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
                     onPress={() => {
                       setSelectedType(item);
                       setSelectedSubcategory(eventSubcategories[item.category][0]);
+                      setCustomSubcategory("");
                     }}
                     selected={selected}
                     soft={soft}
@@ -423,22 +555,35 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
             </View>
 
             <Text style={styles.sectionLabel}>SOTTOCATEGORIA</Text>
-            <View style={styles.subcategoryGrid}>
-              {selectedSubcategories.map((item) => {
-                const selected = item === selectedSubcategory;
-                return (
-                  <PillButton
-                    accent={selected ? createPrimary : colors.ink}
-                    accessibilityLabel={`Seleziona sottocategoria ${item}`}
-                    key={item}
-                    label={item}
-                    onPress={() => setSelectedSubcategory(item)}
-                    selected={selected}
-                    soft={selected ? createPrimarySoft : colors.surfaceMuted}
-                  />
-                );
-              })}
-            </View>
+            <Pressable
+              accessibilityLabel="Seleziona sottocategoria"
+              accessibilityRole="button"
+              onPress={() => setSubcategorySelectOpen(true)}
+              style={[styles.selectButton, fieldErrors.subcategory && styles.inputError]}
+            >
+              <Text style={styles.selectText}>{subcategoryDisplay}</Text>
+              <Ionicons color={colors.muted} name="chevron-down" size={20} />
+            </Pressable>
+            {fieldErrors.subcategory && !selectedSubcategoryIsCustom ? (
+              <Text style={styles.fieldErrorText}>{fieldErrors.subcategory}</Text>
+            ) : null}
+
+            {selectedSubcategoryIsCustom && (
+              <Field error={fieldErrors.subcategory} label="Sottocategoria personalizzata *">
+                <TextInput
+                  autoCapitalize="sentences"
+                  maxLength={maxCustomSubcategoryLength}
+                  onChangeText={(value) => {
+                    setCustomSubcategory(value);
+                    clearFieldError("subcategory");
+                  }}
+                  placeholder="Es. Beach volley, Poetry slam..."
+                  placeholderTextColor={colors.muted}
+                  style={styles.input}
+                  value={customSubcategory}
+                />
+              </Field>
+            )}
 
             <Field error={fieldErrors.title} label="Titolo *">
               <TextInput
@@ -446,7 +591,7 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
                   setTitle(value);
                   clearFieldError("title");
                 }}
-                placeholder={`Es. ${selectedSubcategory} - cercasi 3`}
+                placeholder={`Es. ${effectiveSubcategory || "Evento"} - cercasi 3`}
                 placeholderTextColor={colors.muted}
                 style={styles.input}
                 value={title}
@@ -624,7 +769,7 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
           <View style={styles.reviewStack}>
             <View style={[styles.previewCard, { backgroundColor: selectedSoft }]}>
               <Text style={styles.previewEmoji}>{selectedType.emoji}</Text>
-              <PillButton accent={selectedAccent} label={selectedSubcategory} soft={colors.surface} />
+              <PillButton accent={selectedAccent} label={effectiveSubcategory || subcategoryDisplay} soft={colors.surface} />
               <Text style={styles.previewTitle}>{title || "Titolo evento"}</Text>
               <Text style={styles.previewMeta}>
                 {place || "Luogo"} · {priceLabel}
@@ -632,7 +777,7 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
             </View>
 
             <View style={styles.summaryCard}>
-              <SummaryRow label="Tipo evento" value={`${selectedSubcategory} ${selectedType.emoji}`} />
+              <SummaryRow label="Tipo evento" value={`${effectiveSubcategory || subcategoryDisplay} ${selectedType.emoji}`} />
               <SummaryRow label="Data" value={date || "-"} />
               <SummaryRow label="Orario" value={time || "-"} />
               <SummaryRow label="Luogo" value={place || "-"} />
@@ -646,15 +791,60 @@ export function CreateEventScreen({ user, onCreate }: CreateEventScreenProps) {
 
       <View style={styles.bottomAction}>
         <Pressable
-          accessibilityLabel={step === 2 ? "Pubblica evento" : "Vai al passaggio successivo"}
+          accessibilityLabel={step === 2 ? (editing ? "Salva modifiche evento" : "Pubblica evento") : "Vai al passaggio successivo"}
           accessibilityRole="button"
           onPress={goNext}
           style={styles.primaryButton}
         >
-          <Text style={styles.primaryText}>{step === 2 ? "✓ Pubblica evento" : "Avanti →"}</Text>
+          <Text style={styles.primaryText}>{step === 2 ? (editing ? "✓ Salva modifiche" : "✓ Pubblica evento") : "Avanti →"}</Text>
         </Pressable>
       </View>
-    </View>
+
+      <Modal
+        animationType="fade"
+        onRequestClose={() => setSubcategorySelectOpen(false)}
+        transparent
+        visible={subcategorySelectOpen}
+      >
+        <Pressable
+          accessibilityLabel="Chiudi selezione sottocategoria"
+          accessibilityRole="button"
+          onPress={() => setSubcategorySelectOpen(false)}
+          style={styles.selectOverlay}
+        >
+          <Pressable accessibilityRole="menu" onPress={(event) => event.stopPropagation()} style={styles.selectSheet}>
+            <View style={styles.selectHeader}>
+              <Text style={styles.selectTitle}>Sottocategoria</Text>
+              <Pressable
+                accessibilityLabel="Chiudi"
+                accessibilityRole="button"
+                onPress={() => setSubcategorySelectOpen(false)}
+                style={styles.selectClose}
+              >
+                <Ionicons color={colors.ink} name="close" size={20} />
+              </Pressable>
+            </View>
+
+            {subcategoryOptions.map((option) => {
+              const selected = option === selectedSubcategory;
+              return (
+                <Pressable
+                  accessibilityLabel={`Scegli ${option}`}
+                  accessibilityRole="menuitem"
+                  accessibilityState={{ selected }}
+                  key={option}
+                  onPress={() => chooseSubcategory(option)}
+                  style={[styles.selectOption, selected && styles.selectOptionActive]}
+                >
+                  <Text style={[styles.selectOptionText, selected && styles.selectOptionTextActive]}>{option}</Text>
+                  {selected ? <Ionicons color={selectedAccent} name="checkmark" size={20} /> : null}
+                </Pressable>
+              );
+            })}
+          </Pressable>
+        </Pressable>
+      </Modal>
+    </KeyboardAvoidingView>
   );
 }
 
@@ -801,12 +991,6 @@ const styles = StyleSheet.create({
     flexWrap: "wrap",
     gap: spacing.md
   },
-  subcategoryGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm,
-    marginTop: -spacing.sm
-  },
   fieldGroup: {
     gap: spacing.sm
   },
@@ -838,6 +1022,87 @@ const styles = StyleSheet.create({
     minHeight: 64,
     paddingHorizontal: spacing.lg,
     ...shadow
+  },
+  inputError: {
+    borderColor: colors.danger
+  },
+  selectButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: "#D8D3CC",
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+    minHeight: 64,
+    paddingHorizontal: spacing.lg,
+    ...shadow
+  },
+  selectText: {
+    color: colors.ink,
+    flex: 1,
+    fontSize: 18,
+    fontWeight: "800"
+  },
+  selectOverlay: {
+    alignItems: "center",
+    backgroundColor: "rgba(20, 20, 20, 0.28)",
+    flex: 1,
+    justifyContent: "flex-end",
+    padding: spacing.lg
+  },
+  selectSheet: {
+    backgroundColor: colors.surface,
+    borderRadius: radius.md,
+    gap: spacing.sm,
+    maxWidth: 520,
+    padding: spacing.lg,
+    width: "100%",
+    ...shadow
+  },
+  selectHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: spacing.sm
+  },
+  selectTitle: {
+    color: colors.ink,
+    fontSize: 18,
+    fontWeight: "900"
+  },
+  selectClose: {
+    alignItems: "center",
+    borderColor: colors.line,
+    borderRadius: 20,
+    borderWidth: 1,
+    height: 40,
+    justifyContent: "center",
+    width: 40
+  },
+  selectOption: {
+    alignItems: "center",
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    justifyContent: "space-between",
+    minHeight: 54,
+    paddingHorizontal: spacing.md
+  },
+  selectOptionActive: {
+    backgroundColor: createPrimarySoft,
+    borderColor: createPrimary
+  },
+  selectOptionText: {
+    color: colors.ink,
+    fontSize: 16,
+    fontWeight: "800"
+  },
+  selectOptionTextActive: {
+    color: createPrimary,
+    fontWeight: "900"
   },
   autocompleteWrap: {
     gap: spacing.sm

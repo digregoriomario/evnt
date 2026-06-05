@@ -7,7 +7,11 @@ export const categories: Category[] = [
   "Food",
   "Social",
   "Arte",
-  "Tech"
+  "Tech",
+  "Benessere",
+  "Viaggi",
+  "Gaming",
+  "Cinema"
 ];
 
 export const categoryColors: Record<Category, string> = {
@@ -17,7 +21,11 @@ export const categoryColors: Record<Category, string> = {
   Food: "#EA580C",
   Social: "#0891B2",
   Arte: "#C026D3",
-  Tech: "#2563EB"
+  Tech: "#2563EB",
+  Benessere: "#0D9488",
+  Viaggi: "#0284C7",
+  Gaming: "#4F46E5",
+  Cinema: "#BE123C"
 };
 
 export const categorySoftColors: Record<Category, string> = {
@@ -27,7 +35,11 @@ export const categorySoftColors: Record<Category, string> = {
   Food: "#FFF4E8",
   Social: "#EAFBFF",
   Arte: "#FDF0FF",
-  Tech: "#EEF5FF"
+  Tech: "#EEF5FF",
+  Benessere: "#ECFEFF",
+  Viaggi: "#E0F2FE",
+  Gaming: "#EEF2FF",
+  Cinema: "#FFF1F2"
 };
 
 export const categoryEmojis: Record<Category, string> = {
@@ -37,7 +49,11 @@ export const categoryEmojis: Record<Category, string> = {
   Food: "🍔",
   Social: "🤝",
   Arte: "🎨",
-  Tech: "💻"
+  Tech: "💻",
+  Benessere: "🧘",
+  Viaggi: "🧳",
+  Gaming: "🎮",
+  Cinema: "🎬"
 };
 
 export const categoryDefaultImages: Record<Category, string> = {
@@ -47,7 +63,11 @@ export const categoryDefaultImages: Record<Category, string> = {
   Food: "https://images.unsplash.com/photo-1504674900247-0877df9cc836?auto=format&fit=crop&w=1200&q=80",
   Social: "https://images.unsplash.com/photo-1610890716171-6b1bb98ffd09?auto=format&fit=crop&w=1200&q=80",
   Arte: "https://images.unsplash.com/photo-1545989253-02cc26577f88?auto=format&fit=crop&w=1200&q=80",
-  Tech: "https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=1200&q=80"
+  Tech: "https://images.unsplash.com/photo-1515879218367-8466d910aaa4?auto=format&fit=crop&w=1200&q=80",
+  Benessere: "https://images.unsplash.com/photo-1544367567-0f2fcb009e0b?auto=format&fit=crop&w=1200&q=80",
+  Viaggi: "https://images.unsplash.com/photo-1500530855697-b586d89ba3ee?auto=format&fit=crop&w=1200&q=80",
+  Gaming: "https://images.unsplash.com/photo-1542751371-adc38448a05e?auto=format&fit=crop&w=1200&q=80",
+  Cinema: "https://images.unsplash.com/photo-1489599849927-2ee91cede3ba?auto=format&fit=crop&w=1200&q=80"
 };
 
 export const eventSubcategories: Record<Category, string[]> = {
@@ -57,7 +77,11 @@ export const eventSubcategories: Record<Category, string[]> = {
   Food: ["Street food", "Cena", "Degustazione", "Tour"],
   Social: ["Boardgame", "Networking", "Passeggiata", "Nuove amicizie"],
   Arte: ["Museo", "Mostra", "Teatro", "Workshop"],
-  Tech: ["Hackathon", "Workshop", "Meetup", "Studio group"]
+  Tech: ["Hackathon", "Workshop", "Meetup", "Studio group"],
+  Benessere: ["Yoga", "Pilates", "Meditazione", "Mindfulness", "Spa", "Trekking leggero"],
+  Viaggi: ["Gita fuori porta", "Weekend", "Road trip", "Tour citta", "Escursione", "Scambio lingua"],
+  Gaming: ["Torneo console", "LAN party", "GDR", "E-sport", "Arcade", "Giochi da tavolo"],
+  Cinema: ["Cineforum", "Anteprima", "Maratona film", "Cinema all'aperto", "Documentario", "Serie TV"]
 };
 
 const subcategoryAliases: Partial<Record<Category, Record<string, string[]>>> = {
@@ -71,6 +95,10 @@ const subcategoryAliases: Partial<Record<Category, Record<string, string[]>>> = 
   Food: {
     "Street food": ["street food", "food tour"]
   },
+  Gaming: {
+    "Giochi da tavolo": ["boardgame", "giochi tavolo"],
+    "Torneo console": ["torneo console", "playstation", "xbox", "switch"]
+  },
   Sport: {
     "Calcetto 5v5": ["5v5", "5vs5"],
     "Calcetto 8v8": ["8v8", "8vs8"],
@@ -78,6 +106,10 @@ const subcategoryAliases: Partial<Record<Category, Record<string, string[]>>> = 
   },
   Tech: {
     Workshop: ["workshop", "lab", "laboratorio"]
+  },
+  Viaggi: {
+    "Gita fuori porta": ["gita", "fuori porta"],
+    "Scambio lingua": ["language exchange", "scambio lingua"]
   }
 };
 

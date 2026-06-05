@@ -4,6 +4,7 @@ import { eventsRouter } from "./events.routes";
 import { catalogRouter } from "./catalog.routes";
 import { meRouter } from "./me.routes";
 import { notificationsRouter } from "./notifications.routes";
+import { usersRouter } from "./users.routes";
 
 export const apiRouter = Router();
 
@@ -13,3 +14,4 @@ apiRouter.use("/events", eventsRouter);
 apiRouter.use("/catalog", catalogRouter);
 apiRouter.use("/me", meRouter);
 apiRouter.use("/notifications", notificationsRouter);
+apiRouter.use("/users", usersRouter);

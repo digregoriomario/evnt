@@ -5,7 +5,11 @@ export type Category =
   | "Food"
   | "Social"
   | "Arte"
-  | "Tech";
+  | "Tech"
+  | "Benessere"
+  | "Viaggi"
+  | "Gaming"
+  | "Cinema";
 
 export type ChatMode = "Gruppo aperto" | "Solo annunci";
 

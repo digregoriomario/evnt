@@ -11,10 +11,15 @@
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
+        "NSAppTransportSecurity": {
+          "NSAllowsArbitraryLoads": true
+        },
+        "NSLocalNetworkUsageDescription": "Evnt usa la rete locale per collegarsi al backend durante lo sviluppo.",
         "NSLocationWhenInUseUsageDescription": "Evnt usa la tua posizione per mostrarti gli eventi vicini sulla mappa."
       }
     },
     "android": {
+      "usesCleartextTraffic": true,
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION"
