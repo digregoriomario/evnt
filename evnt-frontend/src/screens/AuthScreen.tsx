@@ -411,7 +411,12 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboard}>
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        automaticallyAdjustKeyboardInsets
+        contentContainerStyle={styles.container}
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+        keyboardShouldPersistTaps="handled"
+      >
         {authView === "welcome" ? (
           <View style={styles.welcome}>
             <View style={styles.welcomeLogo}>

@@ -181,6 +181,7 @@ const createSchema = z.object({
   maxSeats: z.number().int().positive().nullable().optional(),
   category: z.string().min(1),
   chatMode: z.string().optional(),
+  countCreator: z.boolean().default(true),
   image: z.string().url().optional(),
   tags: z.array(z.string()).default([]),
   isLive: z.boolean().optional(),
@@ -211,13 +212,12 @@ eventsRouter.post(
         tags: normalizeEventTags(body.tags, body.subcategory),
         isLive: body.isLive ?? false,
         creatorId: req.userId!,
-        // creator auto-joins their own event
-        participations: { create: { userId: req.userId! } }
+        participations: body.countCreator ? { create: { userId: req.userId! } } : undefined
       },
       include: eventInclude
     });
 
-    res.status(201).json({ event: serializeEvent(event, { registered: true }) });
+    res.status(201).json({ event: serializeEvent(event, { registered: body.countCreator }) });
   })
 );
 

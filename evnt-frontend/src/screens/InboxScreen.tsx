@@ -698,10 +698,12 @@ export function InboxScreen({
         ) : null}
 
         <ScrollView
-          ref={scrollRef}
+          automaticallyAdjustKeyboardInsets
           contentContainerStyle={styles.messagesContainer}
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+          ref={scrollRef}
         >
           {loadingEventId === selectedEvent?.id ? (
             <Text style={styles.loadingText}>Carico i messaggi...</Text>
@@ -756,20 +758,17 @@ export function InboxScreen({
 
   return (
     <>
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        automaticallyAdjustKeyboardInsets
+        contentContainerStyle={styles.container}
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.header}>
           <View>
             <Text style={styles.title}>Chat</Text>
             <Text style={styles.subtitle}>Gruppi evento e conversazioni private.</Text>
           </View>
-          <Pressable
-            accessibilityLabel="Avvia nuova chat privata"
-            accessibilityRole="button"
-            onPress={() => setPeopleOpen(true)}
-            style={styles.headerIcon}
-          >
-            <Ionicons color={colors.ink} name="person-add-outline" size={22} />
-          </Pressable>
         </View>
 
         <View style={styles.searchBox}>
@@ -886,7 +885,11 @@ function PeoplePickerModal({
   return (
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
       <View style={styles.modalOverlay}>
-        <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.peopleSheet}>
+        <KeyboardAvoidingView
+          behavior={Platform.OS === "ios" ? "padding" : "height"}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 18 : 0}
+          style={styles.peopleSheet}
+        >
           <View style={styles.friendHeader}>
             <View>
               <Text style={styles.friendTitle}>Nuova chat</Text>
@@ -1068,16 +1071,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     marginTop: 2
-  },
-  headerIcon: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    height: 44,
-    justifyContent: "center",
-    width: 44
   },
   searchBox: {
     alignItems: "center",

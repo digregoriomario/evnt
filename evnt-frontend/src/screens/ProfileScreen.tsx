@@ -116,7 +116,12 @@ export function ProfileScreen({
         keyboardVerticalOffset={0}
         style={styles.keyboard}
       >
-        <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+        <ScrollView
+          automaticallyAdjustKeyboardInsets
+          contentContainerStyle={styles.container}
+          keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+          keyboardShouldPersistTaps="handled"
+        >
           <View style={styles.editHeader}>
             <View>
               <Text style={styles.sectionTitle}>Modifica profilo</Text>

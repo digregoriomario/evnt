@@ -155,48 +155,48 @@ npm run db:down
     </tr>
     <tr>
       <td align="center" style="background-color:#f6f8fa">Diagrammi UML</td>
-      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-backlog-lightgrey" alt="Backlog"/></td>
+      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-done-success" alt="Done"/></td>
       <td align="center" style="background-color:#f6f8fa"><code>100%</code></td>
-      <td style="background-color:#f6f8fa"></td>
+      <td style="background-color:#f6f8fa">Diagrammi allineati alla versione attuale del dominio applicativo.</td>
     </tr>
     <tr>
       <td align="center" style="background-color:#f6f8fa">Architettura del sistema</td>
-      <td align="center" style="background-color:#f6f8fa"></td>
+      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-done-success" alt="Done"/></td>
       <td align="center" style="background-color:#f6f8fa"><code>100%</code></td>
-      <td style="background-color:#f6f8fa"></td>
+      <td style="background-color:#f6f8fa">Frontend Expo/React Native, backend Express/Prisma, PostgreSQL/PostGIS e Docker.</td>
     </tr>
     <tr>
       <td rowspan="2" valign="middle" align="center"><strong>Implementazione</strong></td>
       <td align="center">Moduli/Componenti</td>
-      <td align="center"><img src="https://img.shields.io/badge/-backlog-lightgrey" alt="Backlog"/></td>
-      <td align="center"><code>0%</code></td>
-      <td>Componenti, API, Docker, Design</td>
+      <td align="center"><img src="https://img.shields.io/badge/-in_progress-blue" alt="In progress"/></td>
+      <td align="center"><code>95%</code></td>
+      <td>Componenti UI, API, autenticazione, database, Docker, Nginx e integrazione mappe/chat implementati.</td>
     </tr>
     <tr>
       <td align="center">Sviluppo App</td>
-      <td align="center"><img src="https://img.shields.io/badge/-backlog-lightgrey" alt="Backlog"/></td>
-      <td align="center"><code>0%</code></td>
-      <td></td>
+      <td align="center"><img src="https://img.shields.io/badge/-in_progress-blue" alt="In progress"/></td>
+      <td align="center"><code>95%</code></td>
+      <td>Login/registrazione, Home, Mappa, Creazione evento, Chat, Profilo, modifica profilo/eventi e sessione persistente presenti.</td>
     </tr>
     <tr>
       <td rowspan="2" valign="middle" align="center" style="background-color:#f6f8fa"><strong>Testing</strong></td>
       <td align="center" style="background-color:#f6f8fa">Test funzionali</td>
-      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-backlog-lightgrey" alt="Backlog"/></td>
-      <td align="center" style="background-color:#f6f8fa"><code>0%</code></td>
-      <td style="background-color:#f6f8fa"></td>
+      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-in_progress-blue" alt="In progress"/></td>
+      <td align="center" style="background-color:#f6f8fa"><code>70%</code></td>
+      <td style="background-color:#f6f8fa">Typecheck frontend/backend, build backend ed export web verificati; resta QA completa su device reali.</td>
     </tr>
     <tr>
       <td align="center" style="background-color:#f6f8fa">Test di accettazione</td>
-      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-backlog-lightgrey" alt="Backlog"/></td>
-      <td align="center" style="background-color:#f6f8fa"><code>0%</code></td>
-      <td style="background-color:#f6f8fa"></td>
+      <td align="center" style="background-color:#f6f8fa"><img src="https://img.shields.io/badge/-in_progress-blue" alt="In progress"/></td>
+      <td align="center" style="background-color:#f6f8fa"><code>60%</code></td>
+      <td style="background-color:#f6f8fa">Flussi principali validati manualmente; da completare revisione finale con casi limite.</td>
     </tr>
     <tr>
       <td rowspan="1" valign="middle" align="center"><strong>Rilascio</strong></td>
-            <td align="center">Distribuzione</td>
-      <td align="center"><img src="https://img.shields.io/badge/-backlog-lightgrey" alt="Backlog"/></td>
-      <td align="center"><code>0%</code></td>
-      <td></td>
+      <td align="center">Distribuzione</td>
+      <td align="center"><img src="https://img.shields.io/badge/-in_progress-blue" alt="In progress"/></td>
+      <td align="center"><code>60%</code></td>
+      <td>Ambiente Docker e istruzioni di avvio disponibili; manca deploy definitivo in ambiente pubblico/produzione.</td>
     </tr>
   </tbody>
 </table>

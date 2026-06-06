@@ -38,6 +38,7 @@ export type EvntEvent = {
     longitude: number;
   };
   dateTimeIso?: string;
+  creatorCountsAsParticipant?: boolean;
   status?: "live" | "trending";
   subcategory?: string;
 };

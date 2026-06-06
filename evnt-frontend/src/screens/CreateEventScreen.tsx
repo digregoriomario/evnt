@@ -161,6 +161,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
   const [date, setDate] = useState(() => dateTimeFromEvent(initialEvent).date);
   const [time, setTime] = useState(() => dateTimeFromEvent(initialEvent).time);
   const [capacity, setCapacity] = useState(initialEvent?.capacity ? String(initialEvent.capacity) : "");
+  const [countCreator, setCountCreator] = useState(initialEvent?.creatorCountsAsParticipant ?? true);
   const [price, setPrice] = useState(initialEvent?.price ? String(initialEvent.price) : "");
   const [chatMode, setChatMode] = useState<ChatMode>(initialEvent?.chatMode ?? "Gruppo aperto");
   const [formError, setFormError] = useState("");
@@ -210,6 +211,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     setDate(nextDateTime.date);
     setTime(nextDateTime.time);
     setCapacity(initialEvent?.capacity ? String(initialEvent.capacity) : "");
+    setCountCreator(initialEvent?.creatorCountsAsParticipant ?? true);
     setPrice(initialEvent?.price ? String(initialEvent.price) : "");
     setChatMode(initialEvent?.chatMode ?? "Gruppo aperto");
     setFormError("");
@@ -391,6 +393,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     setDate(nextDefault.date);
     setTime(nextDefault.time);
     setCapacity("");
+    setCountCreator(true);
     setPrice("");
     setChatMode("Gruppo aperto");
     setFormError("");
@@ -413,7 +416,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
       distanceKm: selectedPlace?.distanceKm ?? initialEvent?.distanceKm ?? 0.9,
       affinity: initialEvent?.affinity ?? 100,
       popularity: initialEvent?.popularity ?? 10,
-      participants: initialEvent?.participants ?? 1,
+      participants: initialEvent?.participants ?? (countCreator ? 1 : 0),
       capacity: Number.isFinite(parsedCapacity) && parsedCapacity > 0 ? parsedCapacity : null,
       image:
         initialEvent?.category === selectedType.category && initialEvent.image
@@ -431,6 +434,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
       ],
       coordinates: selectedPlace?.coordinates ?? initialEvent?.coordinates ?? { latitude: 40.6782, longitude: 14.7589 },
       dateTimeIso: dateTime.toISOString(),
+      creatorCountsAsParticipant: editing ? initialEvent?.creatorCountsAsParticipant : countCreator,
       status: initialEvent?.status,
       subcategory
     };
@@ -519,7 +523,12 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
         </Pressable>
       </View>
 
-      <ScrollView contentContainerStyle={styles.container} keyboardShouldPersistTaps="handled">
+      <ScrollView
+        automaticallyAdjustKeyboardInsets
+        contentContainerStyle={styles.container}
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+        keyboardShouldPersistTaps="handled"
+      >
         <View style={styles.progressRow}>
           {[0, 1, 2].map((item) => (
             <View key={item} style={[styles.progressDot, item <= step && styles.progressDotActive]} />
@@ -729,6 +738,20 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
                   style={styles.input}
                   value={capacity}
                 />
+                {!editing ? (
+                  <Pressable
+                    accessibilityLabel={countCreator ? "Non contarmi tra i partecipanti" : "Conta anche me tra i partecipanti"}
+                    accessibilityRole="checkbox"
+                    accessibilityState={{ checked: countCreator }}
+                    onPress={() => setCountCreator((current) => !current)}
+                    style={styles.countMeRow}
+                  >
+                    <View style={[styles.checkbox, countCreator && styles.checkboxChecked]}>
+                      {countCreator ? <Ionicons color={colors.surface} name="checkmark" size={14} /> : null}
+                    </View>
+                    <Text style={styles.countMeText}>Conta anche me</Text>
+                  </Pressable>
+                ) : null}
               </Field>
               <Field compact error={fieldErrors.price} label="Costo (EUR)">
                 <TextInput
@@ -1025,6 +1048,32 @@ const styles = StyleSheet.create({
   },
   inputError: {
     borderColor: colors.danger
+  },
+  countMeRow: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 36
+  },
+  checkbox: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.sm,
+    borderWidth: 1,
+    height: 24,
+    justifyContent: "center",
+    width: 24
+  },
+  checkboxChecked: {
+    backgroundColor: createPrimary,
+    borderColor: createPrimary
+  },
+  countMeText: {
+    color: colors.ink,
+    flex: 1,
+    fontSize: 13,
+    fontWeight: "800"
   },
   selectButton: {
     alignItems: "center",

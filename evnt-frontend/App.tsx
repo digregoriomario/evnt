@@ -258,14 +258,24 @@ export default function App() {
     maxSeats: event.capacity ?? null,
     category: event.category,
     chatMode: event.chatMode,
+    countCreator: event.creatorCountsAsParticipant,
     image: event.image || undefined,
     tags: event.tags,
     subcategory: event.subcategory
   });
 
   const createEvent = (event: EvntEvent) => {
+    const shouldRegisterCreator = event.creatorCountsAsParticipant !== false;
     setEvents((current) => [event, ...current]);
-    setRegistrations((current) => new Set(current).add(event.id));
+    setRegistrations((current) => {
+      const next = new Set(current);
+      if (shouldRegisterCreator) {
+        next.add(event.id);
+      } else {
+        next.delete(event.id);
+      }
+      return next;
+    });
     setSelectedEventId(event.id);
     setPreviousScreen("create");
     setScreen("detail");
@@ -283,7 +293,9 @@ export default function App() {
           setRegistrations((current) => {
             const next = new Set(current);
             next.delete(event.id);
-            next.add(eventWithSubcategory.id);
+            if (eventWithSubcategory.registered || shouldRegisterCreator) {
+              next.add(eventWithSubcategory.id);
+            }
             return next;
           });
           setSelectedEventId((current) => (current === event.id ? eventWithSubcategory.id : current));

@@ -41,6 +41,7 @@ export type CreateEventPayload = {
   maxSeats?: number | null;
   category: string;
   chatMode?: string;
+  countCreator?: boolean;
   image?: string;
   tags?: string[];
   isLive?: boolean;

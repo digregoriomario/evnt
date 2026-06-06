@@ -1,6 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useMemo, useState } from "react";
-import { Modal, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { CategoryChip } from "../components/CategoryChip";
 import { EmptyState } from "../components/EmptyState";
@@ -76,7 +76,9 @@ export function HomeScreen({
   return (
     <>
       <ScrollView
+        automaticallyAdjustKeyboardInsets
         contentContainerStyle={styles.container}
+        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         keyboardShouldPersistTaps="handled"
         showsVerticalScrollIndicator={false}
       >
