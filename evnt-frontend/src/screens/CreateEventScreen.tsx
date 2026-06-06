@@ -125,6 +125,18 @@ function hasCreateErrors(errors: CreateFieldErrors) {
   return Object.keys(errors).length > 0;
 }
 
+function placeSuggestionKey(suggestion: PlaceSuggestion, index: number) {
+  const { latitude, longitude } = suggestion.coordinates;
+  return [
+    suggestion.name,
+    suggestion.address,
+    suggestion.city,
+    latitude.toFixed(5),
+    longitude.toFixed(5),
+    index
+  ].join("-");
+}
+
 function eventTypeForCategory(category?: Category) {
   return eventTypes.find((item) => item.category === category) ?? eventTypes[1];
 }
@@ -643,11 +655,11 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
 
                 {placeSuggestionsOpen && filteredPlaceSuggestions.length > 0 && (
                   <View style={styles.suggestionList}>
-                    {filteredPlaceSuggestions.map((suggestion) => (
+                    {filteredPlaceSuggestions.map((suggestion, index) => (
                       <Pressable
                         accessibilityLabel={`Seleziona luogo ${suggestion.name}, ${suggestion.address}`}
                         accessibilityRole="button"
-                        key={`${suggestion.name}-${suggestion.address}`}
+                        key={placeSuggestionKey(suggestion, index)}
                         onPress={() => choosePlace(suggestion)}
                         style={styles.suggestionRow}
                       >

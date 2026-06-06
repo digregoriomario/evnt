@@ -78,6 +78,17 @@ function hasErrors(errors: AuthFieldErrors) {
   return Object.keys(errors).length > 0;
 }
 
+function citySuggestionKey(suggestion: CitySuggestion, index: number) {
+  const { latitude, longitude } = suggestion.coordinates;
+  return [
+    suggestion.name,
+    suggestion.province,
+    latitude.toFixed(5),
+    longitude.toFixed(5),
+    index
+  ].join("-");
+}
+
 export function AuthScreen({ onComplete }: AuthScreenProps) {
   const [authView, setAuthView] = useState<"welcome" | "form">("welcome");
   const [mode, setMode] = useState<"signup" | "login">("signup");
@@ -584,10 +595,10 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
 
                       {citySuggestionsOpen && filteredCitySuggestions.length > 0 && (
                         <View style={styles.suggestionList}>
-                          {filteredCitySuggestions.map((suggestion) => (
+                          {filteredCitySuggestions.map((suggestion, index) => (
                             <Pressable
                               accessibilityRole="button"
-                              key={suggestion.name}
+                              key={citySuggestionKey(suggestion, index)}
                               onPress={() => chooseCity(suggestion)}
                               style={styles.suggestionRow}
                             >
