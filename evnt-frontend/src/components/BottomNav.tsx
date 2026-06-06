@@ -20,14 +20,16 @@ const tabs: TabItem[] = [
 
 type BottomNavProps = {
   active: ScreenKey;
+  badgeCounts?: Partial<Record<ScreenKey, number>>;
   onChange: (screen: ScreenKey) => void;
 };
 
-export function BottomNav({ active, onChange }: BottomNavProps) {
+export function BottomNav({ active, badgeCounts = {}, onChange }: BottomNavProps) {
   return (
     <View style={styles.container}>
       {tabs.map((tab) => {
         const selected = active === tab.key;
+        const badgeCount = badgeCounts[tab.key] ?? 0;
         const iconName = (selected
           ? tab.icon.replace("-outline", "")
           : tab.icon) as keyof typeof Ionicons.glyphMap;
@@ -39,11 +41,18 @@ export function BottomNav({ active, onChange }: BottomNavProps) {
             onPress={() => onChange(tab.key)}
             style={[styles.item, selected && styles.activeItem]}
           >
-            <Ionicons
-              color={selected ? colors.primary : colors.muted}
-              name={iconName}
-              size={22}
-            />
+            <View style={styles.iconWrap}>
+              <Ionicons
+                color={selected ? colors.primary : colors.muted}
+                name={iconName}
+                size={22}
+              />
+              {badgeCount > 0 ? (
+                <View style={styles.badge}>
+                  <Text style={styles.badgeText}>{Math.min(badgeCount, 9)}</Text>
+                </View>
+              ) : null}
+            </View>
             <Text style={[styles.label, selected && styles.activeLabel]}>{tab.label}</Text>
           </Pressable>
         );
@@ -73,6 +82,27 @@ const styles = StyleSheet.create({
   },
   activeItem: {
     backgroundColor: colors.surfaceMuted
+  },
+  iconWrap: {
+    position: "relative"
+  },
+  badge: {
+    alignItems: "center",
+    backgroundColor: colors.danger,
+    borderColor: colors.surface,
+    borderRadius: 9,
+    borderWidth: 1,
+    height: 18,
+    justifyContent: "center",
+    position: "absolute",
+    right: -10,
+    top: -8,
+    width: 18
+  },
+  badgeText: {
+    color: colors.surface,
+    fontSize: 10,
+    fontWeight: "900"
   },
   label: {
     color: colors.muted,

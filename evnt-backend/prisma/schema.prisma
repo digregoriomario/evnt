@@ -21,6 +21,18 @@ enum ChatType {
   ANNOUNCEMENTS // "solo annunci"
 }
 
+enum NotificationType {
+  NEW_MATCH
+  SAVED_EVENT_REMINDER
+  EVENT_STARTING
+  EVENT_UPDATED
+  EVENT_CANCELLED
+  LOW_SEATS
+  EVENT_FULL
+  CHAT_MESSAGE
+  ORGANIZER_ANNOUNCEMENT
+}
+
 model User {
   id        Int      @id @default(autoincrement()) @map("user_id")
   email     String   @unique @db.VarChar(255)
@@ -38,6 +50,7 @@ model User {
   participations Participation[]
   messages      ChatMessage[]
   notifications Notification[]
+  pushTokens    PushToken[]
 
   @@map("users")
 }
@@ -144,15 +157,35 @@ model ChatMessage {
 }
 
 model Notification {
-  id        Int      @id @default(autoincrement()) @map("notification_id")
-  userId    Int      @map("user_id")
-  title     String   @db.VarChar(200)
-  message   String   @db.Text
-  isRead    Boolean  @default(false) @map("is_read")
-  createdAt DateTime @default(now()) @map("created_at")
+  id        Int              @id @default(autoincrement()) @map("notification_id")
+  userId    Int              @map("user_id")
+  eventId   Int?             @map("event_id")
+  type      NotificationType @default(NEW_MATCH)
+  title     String           @db.VarChar(200)
+  message   String           @db.Text
+  dedupeKey String?          @map("dedupe_key") @db.VarChar(240)
+  isRead    Boolean          @default(false) @map("is_read")
+  createdAt DateTime         @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([eventId])
   @@map("notifications")
+}
+
+model PushToken {
+  id        Int      @id @default(autoincrement()) @map("push_token_id")
+  userId    Int      @map("user_id")
+  token     String   @unique @db.VarChar(255)
+  platform  String   @db.VarChar(40)
+  deviceId  String?  @map("device_id") @db.VarChar(120)
+  disabled  Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("push_tokens")
 }

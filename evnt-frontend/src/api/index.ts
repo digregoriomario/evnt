@@ -64,12 +64,31 @@ export type UserSearchResult = {
   avatar?: string;
 };
 
+export type NotificationType =
+  | "NEW_MATCH"
+  | "SAVED_EVENT_REMINDER"
+  | "EVENT_STARTING"
+  | "EVENT_UPDATED"
+  | "EVENT_CANCELLED"
+  | "LOW_SEATS"
+  | "EVENT_FULL"
+  | "CHAT_MESSAGE"
+  | "ORGANIZER_ANNOUNCEMENT";
+
 export type Notification = {
   id: number;
+  eventId?: string;
+  type: NotificationType;
   title: string;
   message: string;
   isRead: boolean;
   createdAt: string;
+};
+
+export type PushTokenPayload = {
+  deviceId?: string;
+  platform: string;
+  token: string;
 };
 
 function toQuery(filters?: EventFilters): string {
@@ -206,5 +225,9 @@ export const api = {
   notifications: () =>
     apiRequest<{ notifications: Notification[] }>("/notifications").then((r) => r.notifications),
   markRead: (id: number) => apiRequest<void>(`/notifications/${id}/read`, { method: "POST" }),
-  markAllRead: () => apiRequest<void>("/notifications/read-all", { method: "POST" })
+  markAllRead: () => apiRequest<void>("/notifications/read-all", { method: "POST" }),
+  registerPushToken: (payload: PushTokenPayload) =>
+    apiRequest<void>("/notifications/push-token", { method: "POST", body: payload }),
+  unregisterPushToken: (token: string) =>
+    apiRequest<void>("/notifications/push-token", { method: "DELETE", body: { token } })
 };

@@ -1,10 +1,11 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Modal,
   Platform,
   Pressable,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
@@ -20,7 +21,7 @@ import { EvntEvent, UserProfile } from "../types";
 
 type InboxScreenProps = {
   events: EvntEvent[];
-  initialEventId?: string;
+  onRefresh: () => Promise<void>;
   online: boolean;
   registrations: Set<string>;
   user: UserProfile;
@@ -283,7 +284,7 @@ function lastPreview(messages: DisplayMessage[], fallback: string) {
 
 export function InboxScreen({
   events,
-  initialEventId,
+  onRefresh,
   online,
   registrations,
   user,
@@ -292,15 +293,14 @@ export function InboxScreen({
   const scrollRef = useRef<ScrollView | null>(null);
   const [search, setSearch] = useState("");
   const [draft, setDraft] = useState("");
-  const [selectedTarget, setSelectedTarget] = useState<ChatTarget | null>(
-    initialEventId ? { type: "event", id: initialEventId } : null
-  );
+  const [selectedTarget, setSelectedTarget] = useState<ChatTarget | null>(null);
   const [eventMessageMap, setEventMessageMap] = useState<Record<string, DisplayMessage[]>>({});
   const [directMessageMap, setDirectMessageMap] = useState<Record<string, DisplayMessage[]>>(() =>
     createInitialDirectMessages(user.name)
   );
   const [loadingEventId, setLoadingEventId] = useState<string | null>(null);
   const [sendingEventId, setSendingEventId] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
   const [peopleOpen, setPeopleOpen] = useState(false);
   const [peopleSearch, setPeopleSearch] = useState("");
   const [peopleSearching, setPeopleSearching] = useState(false);
@@ -407,12 +407,6 @@ export function InboxScreen({
   const canSend = draft.trim().length > 0 && !composerLocked && selectedTarget !== null;
 
   useEffect(() => {
-    if (initialEventId) {
-      setSelectedTarget({ type: "event", id: initialEventId });
-    }
-  }, [initialEventId]);
-
-  useEffect(() => {
     if (!peopleOpen) {
       return;
     }
@@ -482,37 +476,52 @@ export function InboxScreen({
     };
   }, [directProfiles, online, peopleOpen, peopleSearch, user.email]);
 
+  const loadEventMessages = useCallback(
+    async (eventId: string, showLoading = true) => {
+      if (!online || !isBackendEventId(eventId)) {
+        return;
+      }
+
+      if (showLoading) {
+        setLoadingEventId(eventId);
+      }
+
+      try {
+        const messages = await api.messages(eventId);
+        setEventMessageMap((current) => ({
+          ...current,
+          [eventId]: messages.map((message) => mapApiMessage(message, user))
+        }));
+      } catch {
+        // Keep the current conversation visible if refresh fails.
+      } finally {
+        if (showLoading) {
+          setLoadingEventId(null);
+        }
+      }
+    },
+    [online, user]
+  );
+
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await onRefresh();
+      if (selectedEvent) {
+        await loadEventMessages(selectedEvent.id, false);
+      }
+    } finally {
+      setRefreshing(false);
+    }
+  }, [loadEventMessages, onRefresh, selectedEvent?.id]);
+
   useEffect(() => {
-    if (!selectedEvent || !online || !isBackendEventId(selectedEvent.id)) {
+    if (!selectedEvent) {
       return;
     }
 
-    let cancelled = false;
-    setLoadingEventId(selectedEvent.id);
-
-    api
-      .messages(selectedEvent.id)
-      .then((messages) => {
-        if (cancelled) {
-          return;
-        }
-
-        setEventMessageMap((current) => ({
-          ...current,
-          [selectedEvent.id]: messages.map((message) => mapApiMessage(message, user))
-        }));
-      })
-      .catch(() => undefined)
-      .finally(() => {
-        if (!cancelled) {
-          setLoadingEventId(null);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, [online, selectedEvent?.id, user]);
+    void loadEventMessages(selectedEvent.id);
+  }, [loadEventMessages, selectedEvent?.id]);
 
   const openTarget = (target: ChatTarget) => {
     setDraft("");
@@ -703,6 +712,14 @@ export function InboxScreen({
           keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
           keyboardShouldPersistTaps="handled"
           onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: true })}
+          refreshControl={
+            <RefreshControl
+              colors={[selectedAccent]}
+              onRefresh={handleRefresh}
+              refreshing={refreshing}
+              tintColor={selectedAccent}
+            />
+          }
           ref={scrollRef}
         >
           {loadingEventId === selectedEvent?.id ? (
@@ -763,11 +780,19 @@ export function InboxScreen({
         contentContainerStyle={styles.container}
         keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            colors={[colors.primary]}
+            onRefresh={handleRefresh}
+            refreshing={refreshing}
+            tintColor={colors.primary}
+          />
+        }
       >
         <View style={styles.header}>
           <View>
             <Text style={styles.title}>Chat</Text>
-            <Text style={styles.subtitle}>Gruppi evento e conversazioni private.</Text>
+            <Text style={styles.subtitle}>Conversazioni private.</Text>
           </View>
         </View>
 
@@ -802,28 +827,6 @@ export function InboxScreen({
           </View>
           <Ionicons color={colors.muted} name="chevron-forward" size={20} />
         </Pressable>
-
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Chat eventi</Text>
-          {eventRows.length ? (
-            eventRows.map(({ event, preview, time, unread }) => (
-              <ChatRow
-                key={event.id}
-                accent={categoryColors[event.category]}
-                iconText={categoryEmojis[event.category]}
-                onPress={() => openTarget({ type: "event", id: event.id })}
-                preview={preview}
-                soft={categorySoftColors[event.category]}
-                subtitle={`${event.chatMode} · ${event.participants} partecipanti`}
-                time={time}
-                title={event.title}
-                unread={unread}
-              />
-            ))
-          ) : (
-            <Text style={styles.emptyListText}>Iscriviti a un evento per vedere la chat qui.</Text>
-          )}
-        </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Chat private</Text>

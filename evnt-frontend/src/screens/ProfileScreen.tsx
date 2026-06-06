@@ -13,7 +13,6 @@ import {
 } from "react-native";
 
 import { CategoryChip } from "../components/CategoryChip";
-import { EmptyState } from "../components/EmptyState";
 import { EventCard } from "../components/EventCard";
 import { ProfileImagePicker } from "../components/ProfileImagePicker";
 import { categories } from "../data/events";
@@ -21,7 +20,6 @@ import { colors, radius, shadow, spacing } from "../theme";
 import { Category, EvntEvent, UserProfile } from "../types";
 
 type ProfileScreenProps = {
-  createdCount: number;
   events: EvntEvent[];
   favorites: Set<string>;
   registrations: Set<string>;
@@ -32,8 +30,9 @@ type ProfileScreenProps = {
   onUpdateProfile: (profile: UserProfile) => Promise<{ ok: boolean; message?: string }>;
 };
 
+type ProfileEventSectionKey = "created" | "favorites" | "registered";
+
 export function ProfileScreen({
-  createdCount,
   events,
   favorites,
   registrations,
@@ -47,8 +46,16 @@ export function ProfileScreen({
   const [draft, setDraft] = useState(user);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
+  const [expandedSections, setExpandedSections] = useState<Record<ProfileEventSectionKey, boolean>>({
+    created: false,
+    favorites: false,
+    registered: false
+  });
   const registeredEvents = events.filter((event) => registrations.has(event.id));
   const favoriteEvents = events.filter((event) => favorites.has(event.id));
+  const createdEvents = events.filter(
+    (event) => event.organizer.trim().toLowerCase() === user.name.trim().toLowerCase()
+  );
   const birthDateLabel = formatDate(user.birthDate);
 
   const openEdit = () => {
@@ -71,6 +78,10 @@ export function ProfileScreen({
         : [...current.interests, interest]
     }));
     setFormError("");
+  };
+
+  const toggleSection = (section: ProfileEventSectionKey) => {
+    setExpandedSections((current) => ({ ...current, [section]: !current[section] }));
   };
 
   const saveProfile = async () => {
@@ -238,77 +249,104 @@ export function ProfileScreen({
         ))}
       </View>
 
-      <View style={styles.stats}>
-        <Stat value={String(registrations.size)} label="seguiti" />
-        <Stat value={String(createdCount)} label="creati" />
-        <Stat value={String(favorites.size)} label="preferiti" />
-      </View>
-
       <View style={styles.infoPanel}>
         <ProfileInfo icon="location-outline" label="Citta base" value={user.city} />
         <ProfileInfo icon="calendar-outline" label="Nascita" value={birthDateLabel} />
         <ProfileInfo icon="sparkles-outline" label="Interessi" value={`${user.interests.length} attivi`} />
       </View>
 
-      <View style={styles.section}>
-        <View style={styles.sectionHeader}>
-          <Text style={styles.sectionTitle}>Prossime iscrizioni</Text>
-          <Text style={styles.sectionMeta}>{registeredEvents.length}</Text>
-        </View>
-        {registeredEvents.length === 0 ? (
-          <EmptyState
-            body="Gli eventi a cui ti iscrivi appariranno qui."
-            icon="ticket-outline"
-            title="Nessuna iscrizione"
-          />
-        ) : (
-          registeredEvents.map((event) => (
-            <EventCard
-              compact
-              event={event}
-              favorite={favorites.has(event.id)}
-              key={event.id}
-              onPress={() => onOpenEvent(event)}
-              onToggleFavorite={() => onToggleFavorite(event.id)}
-              registered
-            />
-          ))
+      <View style={styles.eventSections}>
+        {registeredEvents.length > 0 && (
+          <ExpandableEventSection
+            count={registeredEvents.length}
+            expanded={expandedSections.registered}
+            onToggle={() => toggleSection("registered")}
+            title="Prossime iscrizioni"
+          >
+            {registeredEvents.map((event) => (
+              <EventCard
+                compact
+                event={event}
+                favorite={favorites.has(event.id)}
+                key={event.id}
+                onPress={() => onOpenEvent(event)}
+                onToggleFavorite={() => onToggleFavorite(event.id)}
+                registered
+              />
+            ))}
+          </ExpandableEventSection>
+        )}
+
+        {favoriteEvents.length > 0 && (
+          <ExpandableEventSection
+            count={favoriteEvents.length}
+            expanded={expandedSections.favorites}
+            onToggle={() => toggleSection("favorites")}
+            title="Preferiti"
+          >
+            {favoriteEvents.map((event) => (
+              <EventCard
+                compact
+                event={event}
+                favorite
+                key={event.id}
+                onPress={() => onOpenEvent(event)}
+                onToggleFavorite={() => onToggleFavorite(event.id)}
+                registered={registrations.has(event.id)}
+              />
+            ))}
+          </ExpandableEventSection>
+        )}
+
+        {createdEvents.length > 0 && (
+          <ExpandableEventSection
+            count={createdEvents.length}
+            expanded={expandedSections.created}
+            onToggle={() => toggleSection("created")}
+            title="Creati"
+          >
+            {createdEvents.map((event) => (
+              <EventCard
+                compact
+                event={event}
+                favorite={favorites.has(event.id)}
+                key={event.id}
+                onPress={() => onOpenEvent(event)}
+                onToggleFavorite={() => onToggleFavorite(event.id)}
+                registered={registrations.has(event.id)}
+              />
+            ))}
+          </ExpandableEventSection>
         )}
       </View>
-
-      {favoriteEvents.length > 0 && (
-        <View style={styles.section}>
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Preferiti</Text>
-            <Text style={styles.sectionMeta}>{favoriteEvents.length}</Text>
-          </View>
-          {favoriteEvents.map((event) => (
-            <EventCard
-              compact
-              event={event}
-              favorite
-              key={event.id}
-              onPress={() => onOpenEvent(event)}
-              onToggleFavorite={() => onToggleFavorite(event.id)}
-              registered={registrations.has(event.id)}
-            />
-          ))}
-        </View>
-      )}
     </ScrollView>
   );
 }
 
-type StatProps = {
-  label: string;
-  value: string;
+type ExpandableEventSectionProps = {
+  children: ReactNode;
+  count: number;
+  expanded: boolean;
+  onToggle: () => void;
+  title: string;
 };
 
-function Stat({ label, value }: StatProps) {
+function ExpandableEventSection({ children, count, expanded, onToggle, title }: ExpandableEventSectionProps) {
   return (
-    <View style={styles.stat}>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
+    <View style={styles.accordionCard}>
+      <Pressable
+        accessibilityLabel={`${expanded ? "Chiudi" : "Apri"} ${title}`}
+        accessibilityRole="button"
+        onPress={onToggle}
+        style={styles.accordionHeader}
+      >
+        <View style={styles.accordionTitleWrap}>
+          <Text style={styles.accordionTitle}>{title}</Text>
+          <Text style={styles.accordionMeta}>{count}</Text>
+        </View>
+        <Ionicons color={colors.muted} name={expanded ? "chevron-up" : "chevron-down"} size={20} />
+      </Pressable>
+      {expanded ? <View style={styles.accordionBody}>{children}</View> : null}
     </View>
   );
 }
@@ -516,30 +554,7 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: "900"
   },
-  stats: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    padding: spacing.md,
-    ...shadow
-  },
-  stat: {
-    alignItems: "center",
-    flex: 1
-  },
-  statValue: {
-    color: colors.ink,
-    fontSize: 24,
-    fontWeight: "900"
-  },
-  statLabel: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: "800"
-  },
-  section: {
+  eventSections: {
     gap: spacing.md
   },
   infoPanel: {
@@ -592,5 +607,49 @@ const styles = StyleSheet.create({
     color: colors.teal,
     fontSize: 14,
     fontWeight: "900"
+  },
+  accordionCard: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    overflow: "hidden"
+  },
+  accordionHeader: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
+    minHeight: 58,
+    paddingHorizontal: spacing.md
+  },
+  accordionTitleWrap: {
+    alignItems: "center",
+    flex: 1,
+    flexDirection: "row",
+    gap: spacing.sm
+  },
+  accordionTitle: {
+    color: colors.ink,
+    fontSize: 17,
+    fontWeight: "900"
+  },
+  accordionMeta: {
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 14,
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "900",
+    minWidth: 28,
+    overflow: "hidden",
+    paddingHorizontal: spacing.sm,
+    paddingVertical: 4,
+    textAlign: "center"
+  },
+  accordionBody: {
+    borderTopColor: colors.line,
+    borderTopWidth: 1,
+    gap: spacing.md,
+    padding: spacing.md
   }
 });

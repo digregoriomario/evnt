@@ -1,14 +1,20 @@
 import { createApp } from "./app";
 import { env } from "./config/env";
 import { prisma } from "./lib/prisma";
+import { startExpiredEventsCleanup } from "./utils/eventsCleanup";
+import { startScheduledNotifications } from "./utils/notifications";
 
 async function main() {
   const app = createApp();
+  const stopExpiredEventsCleanup = startExpiredEventsCleanup();
+  const stopScheduledNotifications = startScheduledNotifications();
   const server = app.listen(env.port, () => {
     console.log(`Evnt API listening on http://localhost:${env.port}/api`);
   });
 
   const shutdown = async () => {
+    stopExpiredEventsCleanup();
+    stopScheduledNotifications();
     server.close();
     await prisma.$disconnect();
     process.exit(0);

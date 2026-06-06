@@ -1,12 +1,24 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useMemo, useState } from "react";
-import { Modal, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from "react-native";
+import { useCallback, useMemo, useState } from "react";
+import {
+  Modal,
+  Platform,
+  Pressable,
+  RefreshControl,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View
+} from "react-native";
 
 import { CategoryChip } from "../components/CategoryChip";
 import { EmptyState } from "../components/EmptyState";
 import { EventCard } from "../components/EventCard";
 import { LocationFallbackBanner } from "../components/LocationFallbackBanner";
+import { NotificationsModal } from "../components/NotificationsModal";
 import { PillButton } from "../components/PillButton";
+import { type Notification } from "../api";
 import { cityMatches } from "../data/cities";
 import { categories } from "../data/events";
 import { colors, radius, spacing } from "../theme";
@@ -16,9 +28,13 @@ type HomeScreenProps = {
   events: EvntEvent[];
   favorites: Set<string>;
   locationStatus: LocationStatus;
+  notifications: Notification[];
   registrations: Set<string>;
   user: UserProfile;
+  onMarkAllNotificationsRead: () => void;
   onOpenEvent: (event: EvntEvent) => void;
+  onOpenNotification: (notification: Notification) => void;
+  onRefresh: () => Promise<void>;
   onRequestLocation: () => Promise<Coordinates | null>;
   onToggleFavorite: (eventId: string) => void;
   userCoordinates: Coordinates | null;
@@ -30,9 +46,13 @@ export function HomeScreen({
   events,
   favorites,
   locationStatus,
+  notifications,
   registrations,
   user,
+  onMarkAllNotificationsRead,
   onOpenEvent,
+  onOpenNotification,
+  onRefresh,
   onRequestLocation,
   onToggleFavorite,
   userCoordinates
@@ -41,8 +61,11 @@ export function HomeScreen({
   const [query, setQuery] = useState("");
   const [price, setPrice] = useState<PriceFilter>("tutti");
   const [filtersOpen, setFiltersOpen] = useState(false);
+  const [notificationsOpen, setNotificationsOpen] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const usesCityFallback = locationStatus !== "granted" || userCoordinates === null;
   const showLocationFallbackNotice = usesCityFallback && locationStatus !== "loading";
+  const unreadNotifications = notifications.filter((notification) => !notification.isRead).length;
 
   const filteredEvents = useMemo(() => {
     const normalized = query.trim().toLowerCase();
@@ -73,6 +96,15 @@ export function HomeScreen({
     setQuery("");
   };
 
+  const handleRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      await onRefresh();
+    } finally {
+      setRefreshing(false);
+    }
+  }, [onRefresh]);
+
   return (
     <>
       <ScrollView
@@ -80,10 +112,31 @@ export function HomeScreen({
         contentContainerStyle={styles.container}
         keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
         keyboardShouldPersistTaps="handled"
+        refreshControl={
+          <RefreshControl
+            colors={[colors.primary]}
+            onRefresh={handleRefresh}
+            refreshing={refreshing}
+            tintColor={colors.primary}
+          />
+        }
         showsVerticalScrollIndicator={false}
       >
         <View style={styles.header}>
           <Text style={styles.title}>Ciao, {user.name}</Text>
+          <Pressable
+            accessibilityLabel={`Notifiche${unreadNotifications > 0 ? `, ${unreadNotifications} da leggere` : ""}`}
+            accessibilityRole="button"
+            onPress={() => setNotificationsOpen(true)}
+            style={styles.notificationButton}
+          >
+            <Ionicons color={colors.ink} name="notifications-outline" size={21} />
+            {unreadNotifications > 0 ? (
+              <View style={styles.notificationBadge}>
+                <Text style={styles.notificationBadgeText}>{Math.min(unreadNotifications, 9)}</Text>
+              </View>
+            ) : null}
+          </Pressable>
         </View>
 
         {showLocationFallbackNotice && (
@@ -220,6 +273,17 @@ export function HomeScreen({
           </View>
         </View>
       </Modal>
+
+      <NotificationsModal
+        notifications={notifications}
+        onClose={() => setNotificationsOpen(false)}
+        onMarkAllRead={onMarkAllNotificationsRead}
+        onPressNotification={(notification) => {
+          setNotificationsOpen(false);
+          onOpenNotification(notification);
+        }}
+        visible={notificationsOpen}
+      />
     </>
   );
 }
@@ -250,6 +314,10 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl
   },
   header: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.md,
+    justifyContent: "space-between",
     paddingTop: spacing.sm
   },
   locationBanner: {
@@ -298,9 +366,39 @@ const styles = StyleSheet.create({
   },
   title: {
     color: colors.ink,
+    flex: 1,
     fontSize: 30,
     fontWeight: "900",
     lineHeight: 36
+  },
+  notificationButton: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    height: 44,
+    justifyContent: "center",
+    position: "relative",
+    width: 44
+  },
+  notificationBadge: {
+    alignItems: "center",
+    backgroundColor: colors.danger,
+    borderColor: colors.surface,
+    borderRadius: 9,
+    borderWidth: 1,
+    height: 18,
+    justifyContent: "center",
+    position: "absolute",
+    right: -4,
+    top: -4,
+    width: 18
+  },
+  notificationBadgeText: {
+    color: colors.surface,
+    fontSize: 10,
+    fontWeight: "900"
   },
   searchRow: {
     alignItems: "center",

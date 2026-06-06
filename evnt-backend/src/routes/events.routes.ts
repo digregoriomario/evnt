@@ -4,9 +4,24 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { asyncHandler, HttpError } from "../utils/http";
 import { authOptional, authRequired } from "../middleware/auth";
+import { closeExpiredEvents } from "../utils/eventsCleanup";
+import {
+  notifyCapacityMilestones,
+  notifyChatMessage,
+  notifyEventCancelled,
+  notifyEventUpdated,
+  notifyNewMatchingEvent
+} from "../utils/notifications";
 import { labelToChatType, serializeEvent, subcategoryTagPrefix } from "../utils/serialize";
 
 export const eventsRouter = Router();
+
+eventsRouter.use(
+  asyncHandler(async (_req, _res, next) => {
+    await closeExpiredEvents();
+    next();
+  })
+);
 
 // Returns a map eventId -> distanceKm from a given point using PostGIS.
 async function distanceMap(lat: number, lng: number): Promise<Map<number, number>> {
@@ -217,6 +232,8 @@ eventsRouter.post(
       include: eventInclude
     });
 
+    await notifyNewMatchingEvent(event.id);
+
     res.status(201).json({ event: serializeEvent(event, { registered: body.countCreator }) });
   })
 );
@@ -261,6 +278,7 @@ eventsRouter.put(
       },
       include: eventInclude
     });
+    await notifyEventUpdated(existing, event);
     res.json({ event: serializeEvent(event) });
   })
 );
@@ -274,6 +292,7 @@ eventsRouter.delete(
     const existing = await prisma.event.findUnique({ where: { id } });
     if (!existing) throw new HttpError(404, "Evento non trovato");
     if (existing.creatorId !== req.userId) throw new HttpError(403, "Non sei il creatore");
+    await notifyEventCancelled(existing);
     await prisma.event.delete({ where: { id } });
     res.status(204).send();
   })
@@ -302,6 +321,7 @@ eventsRouter.post(
       update: {}
     });
     const count = await prisma.participation.count({ where: { eventId } });
+    await notifyCapacityMilestones(eventId);
     res.json({ registered: true, participants: count });
   })
 );
@@ -391,6 +411,7 @@ eventsRouter.post(
       data: { eventId, senderId: req.userId!, text },
       include: { sender: { select: { id: true, name: true, email: true, image: true } } }
     });
+    await notifyChatMessage(eventId, req.userId!, message.sender.name);
     res.status(201).json({
       message: {
         id: message.id,

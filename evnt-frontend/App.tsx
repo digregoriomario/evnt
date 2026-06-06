@@ -1,7 +1,7 @@
 import { StatusBar } from "expo-status-bar";
 import * as Location from "expo-location";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { ActivityIndicator, Platform, StyleSheet, Text, View } from "react-native";
+import { ActivityIndicator, AppState, Platform, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
 import { BottomNav } from "./src/components/BottomNav";
@@ -15,6 +15,12 @@ import { HomeScreen } from "./src/screens/HomeScreen";
 import { InboxScreen } from "./src/screens/InboxScreen";
 import { MapScreen } from "./src/screens/MapScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen";
+import {
+  addPushNotificationResponseListener,
+  addPushTokenRefreshListener,
+  registerForPushNotificationsAsync,
+  type PushNotificationData
+} from "./src/pushNotifications";
 import { clearStoredSession, loadStoredSession, saveStoredSession } from "./src/session";
 import { colors, spacing } from "./src/theme";
 import { Coordinates, EvntEvent, LocationStatus, ScreenKey, UserProfile } from "./src/types";
@@ -26,11 +32,29 @@ import {
   isBackendReachable,
   setAuthToken,
   type ApiEvent,
-  type CreateEventPayload
+  type CreateEventPayload,
+  type Notification,
+  type NotificationType
 } from "./src/api";
 import { searchCitiesWorldwide } from "./src/api/geocoding";
 
 const mainScreens: ScreenKey[] = ["home", "map", "create", "inbox", "profile"];
+const chatNotificationTypes = new Set<NotificationType>(["CHAT_MESSAGE", "ORGANIZER_ANNOUNCEMENT"]);
+const closedEventDelayMs = 3 * 24 * 60 * 60 * 1000;
+
+function isClosedEvent(event: EvntEvent, now = Date.now()) {
+  if (!event.dateTimeIso) {
+    return false;
+  }
+
+  const eventTime = Date.parse(event.dateTimeIso);
+  return Number.isFinite(eventTime) && eventTime + closedEventDelayMs <= now;
+}
+
+function activeEvents<T extends EvntEvent>(events: T[]) {
+  const now = Date.now();
+  return events.filter((event) => !isClosedEvent(event, now));
+}
 
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
@@ -38,9 +62,11 @@ export default function App() {
   const [events, setEvents] = useState<EvntEvent[]>(initialEvents);
   const [screen, setScreen] = useState<ScreenKey>("auth");
   const [previousScreen, setPreviousScreen] = useState<ScreenKey>("home");
-  const [selectedEventId, setSelectedEventId] = useState(initialEvents[0]?.id);
+  const [selectedEventId, setSelectedEventId] = useState<string | undefined>(initialEvents[0]?.id);
   const [favorites, setFavorites] = useState<Set<string>>(new Set(["sunset-jam", "street-food"]));
   const [registrations, setRegistrations] = useState<Set<string>>(new Set(["calcetto-lampo"]));
+  const [notifications, setNotifications] = useState<Notification[]>([]);
+  const [pushToken, setPushToken] = useState<string | null>(null);
   const [online, setOnline] = useState(false);
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("loading");
   const [userCoordinates, setUserCoordinates] = useState<Coordinates | null>(null);
@@ -56,6 +82,13 @@ export default function App() {
 
   const activeMainScreen = mainScreens.includes(screen) ? screen : previousScreen;
   const showBottomNav = !sessionLoading && user !== null && mainScreens.includes(screen);
+  const unreadChatNotifications = useMemo(
+    () =>
+      notifications.filter(
+        (notification) => !notification.isRead && chatNotificationTypes.has(notification.type)
+      ).length,
+    [notifications]
+  );
 
   const showToast = useCallback((message: string, tone: ToastTone = "info") => {
     if (toastTimerRef.current) {
@@ -68,6 +101,18 @@ export default function App() {
       toastTimerRef.current = null;
     }, 2800);
   }, []);
+
+  const refreshNotifications = useCallback(async () => {
+    if (!user || !online) {
+      return;
+    }
+
+    try {
+      setNotifications(await api.notifications());
+    } catch {
+      // Notification polling should never interrupt the active screen.
+    }
+  }, [online, user?.email]);
 
   useEffect(() => {
     return () => {
@@ -98,23 +143,139 @@ export default function App() {
 
   const openInbox = (eventId?: string) => {
     setEditingEventId(undefined);
-    setInitialChatEventId(eventId);
+    setInitialChatEventId(undefined);
     if (mainScreens.includes(screen)) {
       setPreviousScreen(screen);
     }
     setScreen("inbox");
   };
 
+  const openEventById = useCallback(
+    async (eventId: string) => {
+      const localEvent = events.find((event) => event.id === eventId);
+      if (localEvent) {
+        openEvent(localEvent);
+        return;
+      }
+
+      if (!online) {
+        showToast("Evento non disponibile offline.", "warning");
+        return;
+      }
+
+      try {
+        const remoteEvent = await api.getEvent(eventId);
+        setEvents((current) =>
+          current.some((event) => event.id === remoteEvent.id) ? current : [remoteEvent, ...current]
+        );
+        openEvent(remoteEvent);
+      } catch {
+        showToast("Evento non piu disponibile.", "warning");
+      }
+    },
+    [events, online, screen, showToast]
+  );
+
+  const markNotificationRead = useCallback(
+    (notificationId: number) => {
+      setNotifications((current) =>
+        current.map((item) => (item.id === notificationId ? { ...item, isRead: true } : item))
+      );
+      if (online) {
+        void api.markRead(notificationId).catch(() => undefined);
+      }
+    },
+    [online]
+  );
+
+  const openPushNotificationData = useCallback(
+    async (data: PushNotificationData) => {
+      if (typeof data.notificationId === "number") {
+        markNotificationRead(data.notificationId);
+      }
+      if (data.eventId) {
+        await openEventById(data.eventId);
+      }
+    },
+    [markNotificationRead, openEventById]
+  );
+
+  const openNotification = async (notification: Notification) => {
+    if (!notification.isRead) {
+      markNotificationRead(notification.id);
+    }
+
+    if (notification.eventId) {
+      await openEventById(notification.eventId);
+    }
+  };
+
+  const markAllNotificationsRead = () => {
+    setNotifications((current) => current.map((notification) => ({ ...notification, isRead: true })));
+    if (online) {
+      void api.markAllRead().catch(() => undefined);
+    }
+  };
+
+  const syncPushToken = useCallback(
+    async (token: string) => {
+      if (!user || !online) {
+        return;
+      }
+
+      setPushToken(token);
+      await api.registerPushToken({
+        platform: Platform.OS,
+        token
+      });
+    },
+    [online, user?.email]
+  );
+
   const isOwnEvent = useCallback(
     (event: EvntEvent) => user?.name.trim().toLowerCase() === event.organizer.trim().toLowerCase(),
     [user?.name]
   );
+
+  const closeDetail = () => {
+    setEditingEventId(undefined);
+    setScreen(mainScreens.includes(previousScreen) ? previousScreen : "home");
+  };
 
   const editEvent = (event: EvntEvent) => {
     setSelectedEventId(event.id);
     setEditingEventId(event.id);
     setPreviousScreen("detail");
     setScreen("create");
+  };
+
+  const deleteEvent = (event: EvntEvent) => {
+    setEvents((current) => current.filter((item) => item.id !== event.id));
+    setFavorites((current) => {
+      const next = new Set(current);
+      next.delete(event.id);
+      return next;
+    });
+    setRegistrations((current) => {
+      const next = new Set(current);
+      next.delete(event.id);
+      return next;
+    });
+    setInitialChatEventId((current) => (current === event.id ? undefined : current));
+    setEditingEventId(undefined);
+    setSelectedEventId((current) => (current === event.id ? undefined : current));
+    setScreen(mainScreens.includes(previousScreen) ? previousScreen : "home");
+    showToast("Evento eliminato.", "success");
+
+    if (online && /^\d+$/.test(event.id)) {
+      api
+        .deleteEvent(event.id)
+        .then(() => {
+          void hydrateFromApi();
+          void refreshNotifications();
+        })
+        .catch(() => showToast("Evento rimosso localmente, ma non sincronizzato.", "warning"));
+    }
   };
 
   const requestUserLocation = useCallback(async (): Promise<Coordinates | null> => {
@@ -200,6 +361,36 @@ export default function App() {
     };
   }, [user?.city, user?.cityCoordinates, user?.email]);
 
+  useEffect(() => {
+    const pruneClosedEvents = () => {
+      setEvents((current) => {
+        const nextEvents = activeEvents(current);
+        return nextEvents.length === current.length ? current : nextEvents;
+      });
+    };
+
+    pruneClosedEvents();
+    const timer = setInterval(pruneClosedEvents, 60 * 60 * 1000);
+    return () => clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const eventIds = new Set(events.map((event) => event.id));
+    setFavorites((current) => new Set([...current].filter((eventId) => eventIds.has(eventId))));
+    setRegistrations((current) => new Set([...current].filter((eventId) => eventIds.has(eventId))));
+
+    if (initialChatEventId && !eventIds.has(initialChatEventId)) {
+      setInitialChatEventId(undefined);
+    }
+
+    if (selectedEventId && !eventIds.has(selectedEventId)) {
+      setSelectedEventId(events[0]?.id);
+      if (screen === "detail") {
+        setScreen(mainScreens.includes(previousScreen) ? previousScreen : "home");
+      }
+    }
+  }, [events, initialChatEventId, previousScreen, screen, selectedEventId]);
+
   const toggleFavorite = (eventId: string) => {
     const willFavorite = !favorites.has(eventId);
     setFavorites((current) => {
@@ -241,7 +432,7 @@ export default function App() {
     }
     showToast(
       joining
-        ? `Iscrizione confermata${event ? `: ${event.title}` : ""}. Chat evento aggiunta.`
+        ? `Iscrizione confermata${event ? `: ${event.title}` : ""}.`
         : "Iscrizione annullata.",
       joining ? "success" : "warning"
     );
@@ -279,7 +470,7 @@ export default function App() {
     setSelectedEventId(event.id);
     setPreviousScreen("create");
     setScreen("detail");
-    showToast("Evento creato e chat evento pronta.", "success");
+    showToast("Evento creato.", "success");
     if (online) {
       api
         .createEvent(eventToPayload(event))
@@ -377,30 +568,51 @@ export default function App() {
   };
 
   const logout = () => {
+    if (pushToken) {
+      void api.unregisterPushToken(pushToken).catch(() => undefined);
+    }
     api.logout();
     void clearStoredSession();
     setOnline(false);
     setLocationStatus("loading");
     setUserCoordinates(null);
+    setNotifications([]);
+    setPushToken(null);
     setUser(null);
     setScreen("auth");
     setPreviousScreen("home");
   };
 
   // Loads live events from the backend and derives favorites/registrations.
-  const hydrateFromApi = async () => {
+  const hydrateFromApi = useCallback(async () => {
     try {
       const remote: ApiEvent[] = await api.listEvents();
-      if (remote.length) {
-        setEvents(remote);
-        setSelectedEventId(remote[0].id);
-        setFavorites(new Set(remote.filter((e) => e.favorite).map((e) => e.id)));
-        setRegistrations(new Set(remote.filter((e) => e.registered).map((e) => e.id)));
-      }
+      const liveEvents = activeEvents(remote);
+      setEvents(liveEvents);
+      setSelectedEventId((current) =>
+        current && liveEvents.some((event) => event.id === current) ? current : liveEvents[0]?.id
+      );
+      setFavorites(new Set(liveEvents.filter((e) => e.favorite).map((e) => e.id)));
+      setRegistrations(new Set(liveEvents.filter((e) => e.registered).map((e) => e.id)));
     } catch {
       // keep mock data already in state
     }
-  };
+  }, []);
+
+  const refreshAppData = useCallback(async () => {
+    if (!user) {
+      return;
+    }
+
+    const reachable = await isBackendReachable();
+    setOnline(reachable);
+    if (!reachable) {
+      showToast(`Backend non raggiungibile da ${getActiveApiBaseUrl()}.`, "warning");
+      return;
+    }
+
+    await Promise.all([hydrateFromApi(), api.notifications().then(setNotifications).catch(() => undefined)]);
+  }, [hydrateFromApi, showToast, user]);
 
   useEffect(() => {
     let cancelled = false;
@@ -463,7 +675,7 @@ export default function App() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [hydrateFromApi]);
 
   useEffect(() => {
     const token = getAuthToken();
@@ -473,6 +685,83 @@ export default function App() {
 
     void saveStoredSession({ token, user });
   }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      setNotifications([]);
+      return;
+    }
+    if (!online) {
+      return;
+    }
+
+    void refreshNotifications();
+    const timer = setInterval(() => {
+      void refreshNotifications();
+    }, 45 * 1000);
+
+    return () => clearInterval(timer);
+  }, [online, refreshNotifications, user]);
+
+  useEffect(() => {
+    if (!user || !online) {
+      return;
+    }
+
+    const refreshEvents = () => {
+      void hydrateFromApi();
+    };
+
+    refreshEvents();
+    const timer = setInterval(refreshEvents, 15 * 1000);
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void hydrateFromApi();
+        void refreshNotifications();
+      }
+    });
+
+    return () => {
+      clearInterval(timer);
+      subscription.remove();
+    };
+  }, [hydrateFromApi, online, refreshNotifications, user]);
+
+  useEffect(() => {
+    if (!user || !online) {
+      return;
+    }
+
+    let cancelled = false;
+
+    const registerPushToken = async () => {
+      const result = await registerForPushNotificationsAsync();
+      if (cancelled) {
+        return;
+      }
+
+      if (result.status === "registered") {
+        await syncPushToken(result.token).catch(() => undefined);
+      } else {
+        console.warn(`Push notifications skipped: ${result.reason}.`);
+      }
+    };
+
+    void registerPushToken();
+
+    const tokenSubscription = addPushTokenRefreshListener((token) => {
+      void syncPushToken(token).catch(() => undefined);
+    });
+    const responseSubscription = addPushNotificationResponseListener((data) => {
+      void openPushNotificationData(data);
+    });
+
+    return () => {
+      cancelled = true;
+      tokenSubscription.remove();
+      responseSubscription.remove();
+    };
+  }, [online, openPushNotificationData, syncPushToken, user?.email]);
 
   // Real auth against the backend: failed login/register keeps the user on auth.
   const handleAuthComplete = async (
@@ -553,9 +842,9 @@ export default function App() {
           canEdit={isOwnEvent(selectedEvent)}
           event={selectedEvent}
           favorite={favorites.has(selectedEvent.id)}
-          onBack={() => setScreen(previousScreen)}
+          onBack={closeDetail}
+          onDelete={() => deleteEvent(selectedEvent)}
           onEdit={() => editEvent(selectedEvent)}
-          onOpenInbox={() => openInbox(selectedEvent.id)}
           onToggleFavorite={() => toggleFavorite(selectedEvent.id)}
           onToggleRegistration={() => toggleRegistration(selectedEvent.id)}
           registered={registrations.has(selectedEvent.id)}
@@ -567,7 +856,7 @@ export default function App() {
       return (
         <InboxScreen
           events={events}
-          initialEventId={initialChatEventId}
+          onRefresh={refreshAppData}
           online={online}
           onOpenEvent={openEvent}
           registrations={registrations}
@@ -610,7 +899,6 @@ export default function App() {
     if (screen === "profile") {
       return (
         <ProfileScreen
-          createdCount={events.filter((event) => event.organizer === user.name).length}
           events={events}
           favorites={favorites}
           onLogout={logout}
@@ -628,7 +916,13 @@ export default function App() {
         events={events}
         favorites={favorites}
         locationStatus={locationStatus}
+        notifications={notifications}
+        onMarkAllNotificationsRead={markAllNotificationsRead}
         onOpenEvent={openEvent}
+        onOpenNotification={(notification) => {
+          void openNotification(notification);
+        }}
+        onRefresh={refreshAppData}
         onRequestLocation={requestUserLocation}
         onToggleFavorite={toggleFavorite}
         registrations={registrations}
@@ -645,7 +939,13 @@ export default function App() {
           <StatusBar style="dark" />
           <View style={styles.appFrame}>
             <View style={styles.content}>{renderScreen()}</View>
-            {showBottomNav && <BottomNav active={activeMainScreen} onChange={navigate} />}
+            {showBottomNav && (
+              <BottomNav
+                active={activeMainScreen}
+                badgeCounts={{ inbox: unreadChatNotifications }}
+                onChange={navigate}
+              />
+            )}
             {toast && (
               <View pointerEvents="none" style={[styles.toastLayer, showBottomNav && styles.toastLayerWithNav]}>
                 <ToastBanner message={toast.message} tone={toast.tone} />

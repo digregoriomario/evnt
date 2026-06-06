@@ -1,5 +1,5 @@
 import { Feather, Ionicons } from "@expo/vector-icons";
-import { Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
+import { Alert, Image, Linking, Platform, Pressable, ScrollView, StyleSheet, Text, View } from "react-native";
 
 import { EventMiniMap } from "../components/EventMiniMap";
 import { PillButton } from "../components/PillButton";
@@ -19,8 +19,8 @@ type EventDetailScreenProps = {
   favorite: boolean;
   registered: boolean;
   onBack: () => void;
+  onDelete?: () => void;
   onEdit?: () => void;
-  onOpenInbox: () => void;
   onToggleFavorite: () => void;
   onToggleRegistration: () => void;
 };
@@ -31,8 +31,8 @@ export function EventDetailScreen({
   favorite,
   registered,
   onBack,
+  onDelete,
   onEdit,
-  onOpenInbox,
   onToggleFavorite,
   onToggleRegistration
 }: EventDetailScreenProps) {
@@ -45,10 +45,6 @@ export function EventDetailScreen({
     : `${event.participants}+`;
   const imageUri = event.image || categoryDefaultImages[event.category];
   const subcategoryLabel = getEventSubcategoryLabel(event);
-  const chatCopy = registered
-    ? "Chat attiva per partecipanti e organizzatore."
-    : "Iscriviti per ritrovare subito questa chat nella sezione Chat.";
-
   const openExternalMap = () => {
     const latitude = event.coordinates.latitude;
     const longitude = event.coordinates.longitude;
@@ -62,6 +58,17 @@ export function EventDetailScreen({
     void Linking.openURL(Platform.OS === "web" ? webUrl : nativeUrl).catch(() => {
       void Linking.openURL(webUrl).catch(() => undefined);
     });
+  };
+
+  const requestDelete = () => {
+    Alert.alert(
+      "Eliminare evento?",
+      "L'evento verra rimosso per tutti i partecipanti.",
+      [
+        { text: "Annulla", style: "cancel" },
+        { text: "Elimina", onPress: onDelete, style: "destructive" }
+      ]
+    );
   };
 
   return (
@@ -87,6 +94,16 @@ export function EventDetailScreen({
                   style={styles.roundButton}
                 >
                   <Ionicons color={colors.ink} name="create-outline" size={22} />
+                </Pressable>
+              ) : null}
+              {canEdit && onDelete ? (
+                <Pressable
+                  accessibilityLabel="Elimina evento"
+                  accessibilityRole="button"
+                  onPress={requestDelete}
+                  style={[styles.roundButton, styles.deleteRoundButton]}
+                >
+                  <Ionicons color={colors.danger} name="trash-outline" size={22} />
                 </Pressable>
               ) : null}
               <Pressable
@@ -143,26 +160,6 @@ export function EventDetailScreen({
             </View>
           </View>
 
-          <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Canale</Text>
-            <Pressable
-              accessibilityLabel={`Apri chat evento ${event.title}`}
-              accessibilityRole="button"
-              onPress={onOpenInbox}
-              style={styles.channelCard}
-            >
-              <View style={styles.channelIcon}>
-                <Ionicons color={colors.teal} name="chatbubbles-outline" size={22} />
-              </View>
-              <View style={styles.channelCopy}>
-                <Text style={styles.channelTitle}>{event.chatMode}</Text>
-                <Text style={styles.channelText}>{chatCopy}</Text>
-                <Text style={styles.channelMeta}>Organizzatore: {event.organizer}</Text>
-              </View>
-              <Ionicons color={colors.muted} name="chevron-forward" size={20} />
-            </Pressable>
-          </View>
-
           <View style={styles.tags}>
             {event.tags.map((tag) => (
               <PillButton accent={colors.teal} key={tag} label={`#${tag}`} soft={colors.tealSoft} />
@@ -177,25 +174,14 @@ export function EventDetailScreen({
           <Text style={styles.ctaMeta}>{registered ? "Partecipazione confermata" : seatsLabel}</Text>
         </View>
         {registered ? (
-          <View style={styles.ctaActions}>
-            <Pressable
-              accessibilityLabel="Annulla partecipazione"
-              accessibilityRole="button"
-              onPress={onToggleRegistration}
-              style={styles.secondaryCtaButton}
-            >
-              <Text style={styles.secondaryCtaText}>Annulla</Text>
-            </Pressable>
-            <Pressable
-              accessibilityLabel={`Apri chat evento ${event.title}`}
-              accessibilityRole="button"
-              onPress={onOpenInbox}
-              style={styles.ctaButton}
-            >
-              <Text style={styles.ctaText}>Chat</Text>
-              <Ionicons color={colors.surface} name="chatbubbles-outline" size={18} />
-            </Pressable>
-          </View>
+          <Pressable
+            accessibilityLabel="Annulla partecipazione"
+            accessibilityRole="button"
+            onPress={onToggleRegistration}
+            style={styles.secondaryCtaButton}
+          >
+            <Text style={styles.secondaryCtaText}>Annulla iscrizione</Text>
+          </Pressable>
         ) : (
           <Pressable
             accessibilityLabel="Partecipa all'evento"
@@ -263,6 +249,9 @@ const styles = StyleSheet.create({
     height: 44,
     justifyContent: "center",
     width: 44
+  },
+  deleteRoundButton: {
+    backgroundColor: "rgba(255,241,240,0.96)"
   },
   content: {
     backgroundColor: colors.background,

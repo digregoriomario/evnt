@@ -22,8 +22,9 @@
       "usesCleartextTraffic": true,
       "softwareKeyboardLayoutMode": "resize",
       "permissions": [
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION"
+      "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "POST_NOTIFICATIONS"
       ]
     },
     "plugins": [
@@ -33,6 +34,7 @@
           "locationWhenInUsePermission": "Evnt usa la tua posizione per mostrarti gli eventi vicini sulla mappa."
         }
       ],
+      "expo-notifications",
       "expo-secure-store",
       "@react-native-community/datetimepicker"
     ],

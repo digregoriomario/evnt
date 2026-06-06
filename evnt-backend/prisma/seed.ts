@@ -293,19 +293,24 @@ async function main() {
   await prisma.notification.createMany({
     data: [
       {
+        eventId: eventBySlug.get("sunset-jam")!,
         userId: demo.id,
-        title: "Promemoria evento",
+        type: "EVENT_STARTING",
+        title: "Si parte tra poco",
         message: "Sunset Jam al Molo inizia tra 1 ora.",
         isRead: false
       },
       {
+        eventId: eventBySlug.get("calcetto-lampo")!,
         userId: demo.id,
+        type: "CHAT_MESSAGE",
         title: "Nuovo messaggio",
         message: "Antonio R. ha scritto nella chat di Calcetto lampo 5vs5.",
         isRead: false
       },
       {
         userId: demo.id,
+        type: "NEW_MATCH",
         title: "Benvenuto su Evnt",
         message: "Completa il profilo e scopri eventi vicino a te.",
         isRead: true
