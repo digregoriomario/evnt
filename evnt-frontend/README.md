@@ -131,12 +131,12 @@ Consulta la documentazione strategica completa:
 Il repository contiene una prima implementazione mobile in Expo/React Native basata sui requisiti di Evnt:
 
 - onboarding con email, data di nascita 16+ e scelta di almeno 3 interessi;
-- feed eventi personalizzato per affinita, categoria e distanza;
+- feed eventi dal backend personalizzato per affinita, categoria e distanza;
 - ricerca testuale con filtri per categoria, prezzo e ordinamento;
-- mappa interattiva mock con pin colorati e anteprima evento;
-- dettaglio evento con preferiti, iscrizione/pagamento simulato, luogo e canale chat;
+- mappa interattiva con pin colorati e anteprima evento;
+- dettaglio evento con preferiti, iscrizione, luogo e notifiche;
 - creazione evento in 3 step: tipo, luogo/orari, pubblicazione;
-- profilo con statistiche, iscrizioni, preferiti, chat e notifiche.
+- profilo con iscrizioni, preferiti, eventi creati e notifiche.
 
 ### Avvio
 
@@ -168,5 +168,5 @@ autenticazione JWT, eventi con feed geolocalizzato, iscrizioni, preferiti,
 chat e notifiche. Vedi `evnt-backend/README.md` per l'avvio.
 
 L'app si collega automaticamente al backend dopo il login/registrazione; se il
-server non è raggiungibile resta in modalità mock locale. URL configurabile con
+server non è raggiungibile mostra lo stato vuoto/errore senza dati locali precompilati. URL configurabile con
 `EXPO_PUBLIC_API_URL` (default `http://localhost:4000/api`, `10.0.2.2` su Android).

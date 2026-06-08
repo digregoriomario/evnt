@@ -90,7 +90,7 @@ export async function apiRequest<T>(path: string, options: RequestOptions = {}):
   throw lastNetworkError instanceof Error ? lastNetworkError : new Error("Backend not reachable");
 }
 
-// Quick reachability check used to decide whether to use live data or mock fallback.
+// Quick reachability check used before requesting live backend data.
 export async function isBackendReachable(timeoutMs = 2500): Promise<boolean> {
   for (const baseUrl of orderedBaseUrls()) {
     const controller = new AbortController();

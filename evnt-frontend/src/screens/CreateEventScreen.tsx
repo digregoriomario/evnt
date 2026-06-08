@@ -341,6 +341,8 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
       const normalizedPrice = price.trim();
       if (place.trim().length < 2) {
         errors.place = "Inserisci il luogo dell'evento.";
+      } else if (!selectedPlace && !initialEvent?.coordinates) {
+        errors.place = "Seleziona un luogo dai suggerimenti.";
       }
       if (address.length > maxAddressLength) {
         errors.address = `L'indirizzo puo contenere al massimo ${maxAddressLength} caratteri.`;
@@ -415,6 +417,13 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
   const publish = () => {
     const dateTime = eventDateTime ?? new Date();
     const subcategory = effectiveSubcategory;
+    const coordinates = selectedPlace?.coordinates ?? initialEvent?.coordinates;
+    if (!coordinates) {
+      showCreateErrors({ place: "Seleziona un luogo dai suggerimenti." });
+      setStep(1);
+      return;
+    }
+
     const event: EvntEvent = {
       id: initialEvent?.id ?? `created-${Date.now()}`,
       title: title.trim(),
@@ -423,28 +432,27 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
       time: time.trim(),
       place: place.trim(),
       city: selectedPlace?.city ?? initialEvent?.city ?? user.city,
-      address: address.trim() || selectedPlace?.address || initialEvent?.address || `${place.trim()}, ${user.city}`,
+      address: address.trim() || selectedPlace?.address || initialEvent?.address || place.trim(),
       price: isFree ? 0 : parsedPrice,
-      distanceKm: selectedPlace?.distanceKm ?? initialEvent?.distanceKm ?? 0.9,
-      affinity: initialEvent?.affinity ?? 100,
-      popularity: initialEvent?.popularity ?? 10,
+      distanceKm: selectedPlace?.distanceKm ?? initialEvent?.distanceKm ?? 0,
+      affinity: initialEvent?.affinity ?? 0,
+      popularity: initialEvent?.popularity ?? 0,
       participants: initialEvent?.participants ?? (countCreator ? 1 : 0),
       capacity: Number.isFinite(parsedCapacity) && parsedCapacity > 0 ? parsedCapacity : null,
       image:
         initialEvent?.category === selectedType.category && initialEvent.image
           ? initialEvent.image
           : categoryDefaultImages[selectedType.category],
-      description: description.trim() || `${subcategory} creato da ${user.name}.`,
+      description: description.trim(),
       organizer: user.name,
       chatMode,
       tags: [
         selectedType.label.toLowerCase(),
         subcategory.toLowerCase(),
         `subcategory:${subcategory}`,
-        (selectedPlace?.city ?? user.city).toLowerCase(),
-        "nuovo"
-      ],
-      coordinates: selectedPlace?.coordinates ?? initialEvent?.coordinates ?? { latitude: 40.6782, longitude: 14.7589 },
+        (selectedPlace?.city ?? user.city).toLowerCase()
+      ].filter(Boolean),
+      coordinates,
       dateTimeIso: dateTime.toISOString(),
       creatorCountsAsParticipant: editing ? initialEvent?.creatorCountsAsParticipant : countCreator,
       status: initialEvent?.status,
@@ -645,7 +653,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
                     onBlur={() => setTimeout(() => setPlaceSuggestionsOpen(false), 120)}
                     onChangeText={handlePlaceChange}
                     onFocus={() => setPlaceSuggestionsOpen(place.trim().length > 1)}
-                    placeholder="Es. Campi Marassi, Genova"
+                    placeholder="Es. Stazione Centrale, Milano"
                     placeholderTextColor={colors.muted}
                     style={styles.placeInput}
                     value={place}

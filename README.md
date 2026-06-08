@@ -47,12 +47,7 @@ npm run dev
 
 Il backend sarà disponibile su `http://localhost:4000/api`.
 
-Credenziali demo create dal seed:
-
-```text
-Email: demo@evnt.app
-Password: password123
-```
+Il seed resetta i dati applicativi locali e carica solo il catalogo di interessi e categorie. Utenti, eventi, chat e notifiche vengono creati dall'app.
 
 Nota: il file `.env` contiene configurazioni locali e non deve essere pushato su GitHub.
 

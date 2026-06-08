@@ -7,7 +7,6 @@ import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { BottomNav } from "./src/components/BottomNav";
 import { ToastBanner, type ToastTone } from "./src/components/ToastBanner";
 import { GluestackUIProvider } from "./src/components/ui";
-import { initialEvents } from "./src/data/events";
 import { AuthScreen, type AuthResult } from "./src/screens/AuthScreen";
 import { CreateEventScreen } from "./src/screens/CreateEventScreen";
 import { EventDetailScreen } from "./src/screens/EventDetailScreen";
@@ -59,12 +58,12 @@ function activeEvents<T extends EvntEvent>(events: T[]) {
 export default function App() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
-  const [events, setEvents] = useState<EvntEvent[]>(initialEvents);
+  const [events, setEvents] = useState<EvntEvent[]>([]);
   const [screen, setScreen] = useState<ScreenKey>("auth");
   const [previousScreen, setPreviousScreen] = useState<ScreenKey>("home");
-  const [selectedEventId, setSelectedEventId] = useState<string | undefined>(initialEvents[0]?.id);
-  const [favorites, setFavorites] = useState<Set<string>>(new Set(["sunset-jam", "street-food"]));
-  const [registrations, setRegistrations] = useState<Set<string>>(new Set(["calcetto-lampo"]));
+  const [selectedEventId, setSelectedEventId] = useState<string | undefined>();
+  const [favorites, setFavorites] = useState<Set<string>>(new Set());
+  const [registrations, setRegistrations] = useState<Set<string>>(new Set());
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [pushToken, setPushToken] = useState<string | null>(null);
   const [online, setOnline] = useState(false);
@@ -595,7 +594,7 @@ export default function App() {
       setFavorites(new Set(liveEvents.filter((e) => e.favorite).map((e) => e.id)));
       setRegistrations(new Set(liveEvents.filter((e) => e.registered).map((e) => e.id)));
     } catch {
-      // keep mock data already in state
+      // Keep the current live state visible if refresh fails.
     }
   }, []);
 

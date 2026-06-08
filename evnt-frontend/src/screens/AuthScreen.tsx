@@ -310,16 +310,14 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
       showValidationErrors(errors, "Controlla email e password.");
       return;
     }
-    const fallbackCity = citySuggestions.find((suggestion) => suggestion.name === "Salerno");
     void submitAuth(
       {
         name: email.split("@")[0] || "Utente Evnt",
         email: normalizedEmail(email),
-        city: "Salerno",
-        cityCoordinates: fallbackCity?.coordinates,
-        birthDate: "2000-01-01",
-        bio: "Bentornato su Evnt.",
-        interests: ["Concerto", "Food", "Sport"]
+        city: "",
+        birthDate: "",
+        bio: "",
+        interests: []
       },
       { mode: "login", password }
     );
@@ -351,7 +349,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
         city: city.trim(),
         cityCoordinates: exactCity?.coordinates,
         birthDate,
-        bio: bio.trim() || "Pronto a scoprire nuovi eventi in zona.",
+        bio: bio.trim(),
         interests,
         avatar: avatar.trim() || undefined
       },
@@ -585,7 +583,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
                           onBlur={() => setTimeout(() => setCitySuggestionsOpen(false), 120)}
                           onChangeText={handleCityChange}
                           onFocus={() => setCitySuggestionsOpen(true)}
-                          placeholder="Es. Salerno"
+                          placeholder="Es. Roma"
                           placeholderTextColor={colors.muted}
                           style={styles.cityInput}
                           value={city}

@@ -20,12 +20,10 @@ npm install
 npm run db:up                 # start Postgres+PostGIS in Docker
 npm run prisma:generate       # generate the Prisma client
 npm run db:setup              # push schema + add PostGIS geom column & index
-npm run seed                  # load demo data (events, users, categories...)
+npm run seed                  # reset local data and load catalog data
 
 npm run dev                   # API on http://localhost:4000/api
 ```
-
-Demo login created by the seed: **demo@evnt.app / password123**
 
 > First run of `prisma:generate` downloads the query engine — needs internet access.
 
@@ -39,7 +37,7 @@ Demo login created by the seed: **demo@evnt.app / password123**
 | `npm run db:up` / `db:down` | Start / stop the Postgres container |
 | `npm run prisma:generate` | Generate the Prisma client |
 | `npm run db:setup` | `prisma db push` + apply `prisma/sql/postgis.sql` |
-| `npm run seed` | Seed the database |
+| `npm run seed` | Reset local app data and seed catalog interests/categories |
 
 ## PostGIS
 

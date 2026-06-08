@@ -68,62 +68,7 @@ type ChatRowProps = {
   unread?: number;
 };
 
-const contactProfiles: DirectChat[] = [
-  {
-    id: "anna.rossi@evnt.app",
-    email: "anna.rossi@evnt.app",
-    name: "Anna",
-    status: "Sta partecipando a Sunset Jam",
-    accent: "#0891B2",
-    soft: "#EAFBFF",
-    city: "Salerno",
-    interests: ["Concerti", "Serate"]
-  },
-  {
-    id: "luca.verdi@evnt.app",
-    email: "luca.verdi@evnt.app",
-    name: "Luca",
-    status: "Compagno di calcetto",
-    accent: "#16A34A",
-    soft: "#ECFDF3",
-    city: "Salerno",
-    interests: ["Sport", "Social"]
-  },
-  {
-    id: "sofia.bianchi@evnt.app",
-    email: "sofia.bianchi@evnt.app",
-    name: "Sofia",
-    status: "Food tour e serate social",
-    accent: "#EA580C",
-    soft: "#FFF4E8",
-    city: "Cava de' Tirreni",
-    interests: ["Food", "Social"]
-  },
-  {
-    id: "marco.neri@evnt.app",
-    email: "marco.neri@evnt.app",
-    name: "Marco",
-    status: "Cerca gruppo per basket",
-    accent: "#2563EB",
-    soft: "#EEF5FF",
-    city: "Salerno",
-    interests: ["Sport", "Tech"]
-  },
-  {
-    id: "giulia.russo@evnt.app",
-    email: "giulia.russo@evnt.app",
-    name: "Giulia",
-    status: "Mostre, teatro e aperitivi",
-    accent: "#C026D3",
-    soft: "#FDF0FF",
-    city: "Vietri sul Mare",
-    interests: ["Arte", "Serate"]
-  }
-];
-
 const isBackendEventId = (id: string) => /^\d+$/.test(id);
-
-const minutesAgo = (minutes: number) => new Date(Date.now() - minutes * 60 * 1000).toISOString();
 
 const normalizedEmail = (value: string) => value.trim().toLowerCase();
 
@@ -157,82 +102,6 @@ function profileFromUser(user: UserSearchResult): DirectChat {
     city: user.city || "Citta non indicata",
     interests: []
   };
-}
-
-function createInitialDirectMessages(userName: string): Record<string, DisplayMessage[]> {
-  return {
-    "anna.rossi@evnt.app": [
-      {
-        id: "anna-1",
-        text: "Ci vediamo direttamente al molo?",
-        sentAt: minutesAgo(54),
-        senderEmail: "anna.rossi@evnt.app",
-        senderName: "Anna",
-        mine: false
-      },
-      {
-        id: "anna-2",
-        text: "Si, arrivo dieci minuti prima cosi ci troviamo con calma.",
-        sentAt: minutesAgo(38),
-        senderName: userName,
-        mine: true
-      }
-    ],
-    "luca.verdi@evnt.app": [
-      {
-        id: "luca-1",
-        text: "Ho altre due persone interessate al calcetto.",
-        sentAt: minutesAgo(96),
-        senderEmail: "luca.verdi@evnt.app",
-        senderName: "Luca",
-        mine: false
-      }
-    ],
-    "sofia.bianchi@evnt.app": [
-      {
-        id: "sofia-1",
-        text: "Per il food tour passo dal centro.",
-        sentAt: minutesAgo(1440),
-        senderEmail: "sofia.bianchi@evnt.app",
-        senderName: "Sofia",
-        mine: false
-      }
-    ]
-  };
-}
-
-function createEventSeedMessages(events: EvntEvent[], userName: string): Record<string, DisplayMessage[]> {
-  return events.reduce<Record<string, DisplayMessage[]>>((acc, event, index) => {
-    const firstText =
-      event.chatMode === "Solo annunci"
-        ? `Aggiornamento da ${event.organizer}: confermato ${event.place} alle ${event.time}.`
-        : `Benvenuti nella chat di ${event.title}. Usiamola per organizzarci prima dell'evento.`;
-
-    const messages: DisplayMessage[] = [
-      {
-        id: `${event.id}-seed-organizer`,
-        text: firstText,
-        sentAt: minutesAgo(150 + index * 19),
-        senderEmail: emailFromName(event.organizer),
-        senderName: event.organizer,
-        mine: event.organizer.toLowerCase() === userName.toLowerCase()
-      }
-    ];
-
-    if (event.chatMode === "Gruppo aperto") {
-      messages.push({
-        id: `${event.id}-seed-community`,
-        text: "Io ci sono, qualcuno vuole incontrarsi prima?",
-        sentAt: minutesAgo(46 + index * 7),
-        senderEmail: "community@evnt.app",
-        senderName: "Community Evnt",
-        mine: false
-      });
-    }
-
-    acc[event.id] = messages;
-    return acc;
-  }, {});
 }
 
 function mapApiMessage(message: ChatMessage, user: UserProfile): DisplayMessage {
@@ -295,9 +164,7 @@ export function InboxScreen({
   const [draft, setDraft] = useState("");
   const [selectedTarget, setSelectedTarget] = useState<ChatTarget | null>(null);
   const [eventMessageMap, setEventMessageMap] = useState<Record<string, DisplayMessage[]>>({});
-  const [directMessageMap, setDirectMessageMap] = useState<Record<string, DisplayMessage[]>>(() =>
-    createInitialDirectMessages(user.name)
-  );
+  const [directMessageMap, setDirectMessageMap] = useState<Record<string, DisplayMessage[]>>({});
   const [loadingEventId, setLoadingEventId] = useState<string | null>(null);
   const [sendingEventId, setSendingEventId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
@@ -306,17 +173,8 @@ export function InboxScreen({
   const [peopleSearching, setPeopleSearching] = useState(false);
   const [peopleSearchError, setPeopleSearchError] = useState("");
   const [peopleSearchResult, setPeopleSearchResult] = useState<DirectChat | null>(null);
-  const [directProfiles, setDirectProfiles] = useState<Record<string, DirectChat>>(() =>
-    profileMapFromContacts(contactProfiles)
-  );
-  const [directChatIds, setDirectChatIds] = useState<Set<string>>(
-    () => new Set(Object.keys(createInitialDirectMessages(user.name)))
-  );
-
-  const seededEventMessages = useMemo(
-    () => createEventSeedMessages(events, user.name),
-    [events, user.name]
-  );
+  const [directProfiles, setDirectProfiles] = useState<Record<string, DirectChat>>({});
+  const [directChatIds, setDirectChatIds] = useState<Set<string>>(new Set());
 
   const selectedEvent =
     selectedTarget?.type === "event"
@@ -328,43 +186,12 @@ export function InboxScreen({
       : undefined;
 
   const selectedMessages = selectedEvent
-    ? eventMessageMap[selectedEvent.id] ?? seededEventMessages[selectedEvent.id] ?? []
+    ? eventMessageMap[selectedEvent.id] ?? []
     : selectedDirect
       ? directMessageMap[selectedDirect.id] ?? []
       : [];
 
   const query = search.trim().toLowerCase();
-
-  const eventRows = useMemo(
-    () =>
-      events
-        .filter((event) => {
-          const organizerMatches = event.organizer.trim().toLowerCase() === user.name.trim().toLowerCase();
-          const hasLocalMessages = Boolean(eventMessageMap[event.id]?.length);
-          return registrations.has(event.id) || organizerMatches || hasLocalMessages;
-        })
-        .map((event) => {
-          const messages = eventMessageMap[event.id] ?? seededEventMessages[event.id] ?? [];
-          const last = messages[messages.length - 1];
-          return {
-            event,
-            preview: lastPreview(messages, `${event.chatMode} con ${event.participants} partecipanti`),
-            time: formatChatTime(last?.sentAt),
-            unread: event.status === "live" ? 2 : event.status === "trending" ? 1 : undefined
-          };
-        })
-        .filter(({ event, preview }) => {
-          if (!query) {
-            return true;
-          }
-
-          return [event.title, event.organizer, getEventSubcategoryLabel(event), preview]
-            .join(" ")
-            .toLowerCase()
-            .includes(query);
-        }),
-    [eventMessageMap, events, query, registrations, seededEventMessages, user.name]
-  );
 
   const directRows = useMemo(
     () =>
@@ -432,7 +259,7 @@ export function InboxScreen({
       return;
     }
 
-    const localProfile = directProfiles[email] ?? contactProfiles.find((contact) => contact.email === email);
+    const localProfile = directProfiles[email];
     if (localProfile) {
       setPeopleSearching(false);
       setPeopleSearchResult(localProfile);
@@ -578,7 +405,7 @@ export function InboxScreen({
   const appendEventMessage = (eventId: string, message: DisplayMessage) => {
     setEventMessageMap((current) => ({
       ...current,
-      [eventId]: [...(current[eventId] ?? seededEventMessages[eventId] ?? []), message]
+      [eventId]: [...(current[eventId] ?? []), message]
     }));
   };
 
