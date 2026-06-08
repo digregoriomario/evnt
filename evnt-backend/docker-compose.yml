@@ -35,7 +35,7 @@ services:
       CORS_ORIGIN: "*"
     ports:
       - "4000:4000"
-    command: sh -c "npm run db:setup && npm run dev"
+    command: sh -c "node -e \"require.resolve('ws')\" >/dev/null 2>&1 || npm install ws @types/ws; npx prisma db push --accept-data-loss && npx prisma db execute --file prisma/sql/postgis.sql --schema prisma/schema.prisma && npm run dev"
     volumes:
       - ./src:/app/src
       - ./prisma:/app/prisma

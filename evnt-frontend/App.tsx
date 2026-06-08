@@ -73,6 +73,8 @@ export default function App() {
   const [editingEventId, setEditingEventId] = useState<string | undefined>();
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pushRegistrationAttemptRef = useRef<string | null>(null);
+  const pushSkipWarningRef = useRef<string | null>(null);
 
   const selectedEvent = useMemo(
     () => events.find((event) => event.id === selectedEventId) ?? events[0],
@@ -249,6 +251,15 @@ export default function App() {
   };
 
   const deleteEvent = (event: EvntEvent) => {
+    const isRemoteEvent = /^\d+$/.test(event.id);
+    if (isRemoteEvent && !online) {
+      showToast("Backend non raggiungibile: non posso eliminare l'evento ora.", "warning");
+      return;
+    }
+
+    const previousEvents = events;
+    const previousFavorites = favorites;
+    const previousRegistrations = registrations;
     setEvents((current) => current.filter((item) => item.id !== event.id));
     setFavorites((current) => {
       const next = new Set(current);
@@ -266,14 +277,21 @@ export default function App() {
     setScreen(mainScreens.includes(previousScreen) ? previousScreen : "home");
     showToast("Evento eliminato.", "success");
 
-    if (online && /^\d+$/.test(event.id)) {
+    if (isRemoteEvent) {
       api
         .deleteEvent(event.id)
         .then(() => {
           void hydrateFromApi();
           void refreshNotifications();
         })
-        .catch(() => showToast("Evento rimosso localmente, ma non sincronizzato.", "warning"));
+        .catch(() => {
+          setEvents(previousEvents);
+          setFavorites(previousFavorites);
+          setRegistrations(previousRegistrations);
+          setSelectedEventId(event.id);
+          setScreen("detail");
+          showToast("Eliminazione non riuscita. Riprova tra poco.", "warning");
+        });
     }
   };
 
@@ -391,6 +409,11 @@ export default function App() {
   }, [events, initialChatEventId, previousScreen, screen, selectedEventId]);
 
   const toggleFavorite = (eventId: string) => {
+    if (!online || !/^\d+$/.test(eventId)) {
+      showToast("Preferiti disponibili quando il backend e raggiungibile.", "warning");
+      return;
+    }
+
     const willFavorite = !favorites.has(eventId);
     setFavorites((current) => {
       const next = new Set(current);
@@ -401,15 +424,33 @@ export default function App() {
       }
       return next;
     });
-    if (online) {
-      (willFavorite ? api.bookmark(eventId) : api.unbookmark(eventId)).catch(() => undefined);
-    }
+    (willFavorite ? api.bookmark(eventId) : api.unbookmark(eventId)).catch(() => {
+      setFavorites((current) => {
+        const next = new Set(current);
+        if (willFavorite) {
+          next.delete(eventId);
+        } else {
+          next.add(eventId);
+        }
+        return next;
+      });
+      showToast("Non sono riuscito ad aggiornare i preferiti.", "warning");
+    });
     showToast(willFavorite ? "Evento salvato nei preferiti." : "Evento rimosso dai preferiti.", "success");
   };
 
   const toggleRegistration = (eventId: string) => {
+    if (!online || !/^\d+$/.test(eventId)) {
+      showToast("Iscrizioni disponibili quando il backend e raggiungibile.", "warning");
+      return;
+    }
+
     const joining = !registrations.has(eventId);
     const event = events.find((item) => item.id === eventId);
+    if (!event) {
+      return;
+    }
+
     setRegistrations((current) => {
       const next = new Set(current);
       if (next.has(eventId)) {
@@ -426,9 +467,45 @@ export default function App() {
           : event
       )
     );
-    if (online) {
-      (joining ? api.join(eventId) : api.leave(eventId)).catch(() => undefined);
-    }
+    (joining ? api.join(eventId) : api.leave(eventId))
+      .then((response) => {
+        setRegistrations((current) => {
+          const next = new Set(current);
+          if (response.registered) {
+            next.add(eventId);
+          } else {
+            next.delete(eventId);
+          }
+          return next;
+        });
+        setEvents((current) =>
+          current.map((item) =>
+            item.id === eventId ? { ...item, participants: response.participants } : item
+          )
+        );
+        if (joining) {
+          setInitialChatEventId(eventId);
+        }
+        void hydrateFromApi();
+      })
+      .catch(() => {
+        setRegistrations((current) => {
+          const next = new Set(current);
+          if (joining) {
+            next.delete(eventId);
+          } else {
+            next.add(eventId);
+          }
+          return next;
+        });
+        setEvents((current) =>
+          current.map((item) => (item.id === eventId ? { ...item, participants: event.participants } : item))
+        );
+        showToast(
+          joining ? "Iscrizione non riuscita. Controlla posti e connessione." : "Annullamento non riuscito.",
+          "warning"
+        );
+      });
     showToast(
       joining
         ? `Iscrizione confermata${event ? `: ${event.title}` : ""}.`
@@ -455,6 +532,11 @@ export default function App() {
   });
 
   const createEvent = (event: EvntEvent) => {
+    if (!online) {
+      showToast("Backend non raggiungibile: non posso creare l'evento ora.", "warning");
+      return false;
+    }
+
     const shouldRegisterCreator = event.creatorCountsAsParticipant !== false;
     setEvents((current) => [event, ...current]);
     setRegistrations((current) => {
@@ -470,31 +552,50 @@ export default function App() {
     setPreviousScreen("create");
     setScreen("detail");
     showToast("Evento creato.", "success");
-    if (online) {
-      api
-        .createEvent(eventToPayload(event))
-        .then((createdEvent) => {
-          const eventWithSubcategory = { ...createdEvent, subcategory: event.subcategory };
-          setEvents((current) =>
-            current.map((currentEvent) =>
-              currentEvent.id === event.id ? eventWithSubcategory : currentEvent
-            )
-          );
-          setRegistrations((current) => {
-            const next = new Set(current);
-            next.delete(event.id);
-            if (eventWithSubcategory.registered || shouldRegisterCreator) {
-              next.add(eventWithSubcategory.id);
-            }
-            return next;
-          });
-          setSelectedEventId((current) => (current === event.id ? eventWithSubcategory.id : current));
-        })
-        .catch(() => undefined);
-    }
+    api
+      .createEvent(eventToPayload(event))
+      .then((createdEvent) => {
+        const eventWithSubcategory = { ...createdEvent, subcategory: event.subcategory };
+        setEvents((current) =>
+          current.map((currentEvent) =>
+            currentEvent.id === event.id ? eventWithSubcategory : currentEvent
+          )
+        );
+        setRegistrations((current) => {
+          const next = new Set(current);
+          next.delete(event.id);
+          if (eventWithSubcategory.registered || shouldRegisterCreator) {
+            next.add(eventWithSubcategory.id);
+          }
+          return next;
+        });
+        setSelectedEventId((current) => (current === event.id ? eventWithSubcategory.id : current));
+        setInitialChatEventId(eventWithSubcategory.id);
+        void hydrateFromApi();
+        void refreshNotifications();
+      })
+      .catch(() => {
+        setEvents((current) => current.filter((item) => item.id !== event.id));
+        setRegistrations((current) => {
+          const next = new Set(current);
+          next.delete(event.id);
+          return next;
+        });
+        setSelectedEventId(undefined);
+        setScreen("create");
+        showToast("Creazione non riuscita. Controlla i campi e riprova.", "warning");
+      });
+    return true;
   };
 
   const updateEvent = (event: EvntEvent) => {
+    const isRemoteEvent = /^\d+$/.test(event.id);
+    if (isRemoteEvent && !online) {
+      showToast("Backend non raggiungibile: non posso salvare le modifiche ora.", "warning");
+      return false;
+    }
+
+    const previousEvent = events.find((item) => item.id === event.id);
     setEvents((current) => current.map((item) => (item.id === event.id ? event : item)));
     setSelectedEventId(event.id);
     setEditingEventId(undefined);
@@ -502,7 +603,7 @@ export default function App() {
     setScreen("detail");
     showToast("Evento aggiornato.", "success");
 
-    if (online && /^\d+$/.test(event.id)) {
+    if (isRemoteEvent) {
       api
         .updateEvent(event.id, eventToPayload(event))
         .then(({ event: remoteEvent }) => {
@@ -511,9 +612,16 @@ export default function App() {
             current.map((item) => (item.id === event.id ? eventWithSubcategory : item))
           );
           setSelectedEventId((current) => (current === event.id ? eventWithSubcategory.id : current));
+          void hydrateFromApi();
         })
-        .catch(() => showToast("Evento salvato localmente, ma non sincronizzato.", "warning"));
+        .catch(() => {
+          if (previousEvent) {
+            setEvents((current) => current.map((item) => (item.id === event.id ? previousEvent : item)));
+          }
+          showToast("Aggiornamento non riuscito. Ho ripristinato l'evento.", "warning");
+        });
     }
+    return true;
   };
 
   const updateProfile = async (profile: UserProfile): Promise<AuthResult> => {
@@ -577,6 +685,8 @@ export default function App() {
     setUserCoordinates(null);
     setNotifications([]);
     setPushToken(null);
+    pushRegistrationAttemptRef.current = null;
+    pushSkipWarningRef.current = null;
     setUser(null);
     setScreen("auth");
     setPreviousScreen("home");
@@ -734,6 +844,12 @@ export default function App() {
     let cancelled = false;
 
     const registerPushToken = async () => {
+      const attemptKey = user.email;
+      if (pushRegistrationAttemptRef.current === attemptKey) {
+        return;
+      }
+      pushRegistrationAttemptRef.current = attemptKey;
+
       const result = await registerForPushNotificationsAsync();
       if (cancelled) {
         return;
@@ -742,7 +858,11 @@ export default function App() {
       if (result.status === "registered") {
         await syncPushToken(result.token).catch(() => undefined);
       } else {
-        console.warn(`Push notifications skipped: ${result.reason}.`);
+        const warningKey = `${attemptKey}:${result.reason}`;
+        if (pushSkipWarningRef.current !== warningKey) {
+          pushSkipWarningRef.current = warningKey;
+          console.warn(`Push notifications skipped: ${result.reason}.`);
+        }
       }
     };
 
@@ -855,6 +975,8 @@ export default function App() {
       return (
         <InboxScreen
           events={events}
+          initialEventId={initialChatEventId}
+          onInitialEventHandled={() => setInitialChatEventId(undefined)}
           onRefresh={refreshAppData}
           online={online}
           onOpenEvent={openEvent}

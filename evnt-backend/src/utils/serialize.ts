@@ -26,15 +26,21 @@ const formatTimeLabel = (d: Date) =>
   `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 
 export const subcategoryTagPrefix = "subcategory:";
+export const cityTagPrefix = "city:";
 
 export const subcategoryFromTags = (tags: string[]) =>
   tags.find((tag) => tag.startsWith(subcategoryTagPrefix))?.slice(subcategoryTagPrefix.length).trim();
 
+export const cityFromTags = (tags: string[]) =>
+  tags.find((tag) => tag.startsWith(cityTagPrefix))?.slice(cityTagPrefix.length).trim();
+
 export const publicEventTags = (tags: string[]) =>
-  tags.filter((tag) => !tag.startsWith(subcategoryTagPrefix));
+  tags.filter((tag) => !tag.startsWith(subcategoryTagPrefix) && !tag.startsWith(cityTagPrefix));
 
 const cityFromPlace = (place: string) => {
-  const parts = place.split(",").map((p) => p.trim());
+  const parts = place.split(",").map((p) => p.trim()).filter(Boolean);
+  if (parts.length >= 4) return parts[parts.length - 3];
+  if (parts.length === 3) return parts[parts.length - 2];
   return parts.length > 1 ? parts[parts.length - 1] : "";
 };
 
@@ -72,6 +78,7 @@ export const serializeEvent = (e: EventRecord, ctx: SerializeContext = {}) => {
   const fillRatio = capacity ? participants / capacity : participants / 100;
   const popularity = Math.min(99, Math.round(40 + fillRatio * 59));
   const subcategory = subcategoryFromTags(e.tags);
+  const city = cityFromTags(e.tags) ?? cityFromPlace(e.place);
 
   return {
     id: String(e.id),
@@ -80,7 +87,7 @@ export const serializeEvent = (e: EventRecord, ctx: SerializeContext = {}) => {
     date: formatDateLabel(e.dateHour),
     time: formatTimeLabel(e.dateHour),
     place: e.place,
-    city: cityFromPlace(e.place),
+    city,
     address: e.place,
     price: Number(e.price),
     distanceKm: ctx.distanceKm ?? 0,

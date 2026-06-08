@@ -9,6 +9,19 @@ export const setAuthToken = (token: string | null) => {
 export const getAuthToken = () => authToken;
 export const getActiveApiBaseUrl = () => activeBaseUrl;
 
+export function getRealtimeWebSocketUrl() {
+  if (!authToken || !activeBaseUrl) {
+    return null;
+  }
+
+  const url = new URL(activeBaseUrl);
+  url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+  url.pathname = "/ws";
+  url.search = "";
+  url.searchParams.set("token", authToken);
+  return url.toString();
+}
+
 export class ApiError extends Error {
   status: number;
   details?: unknown;

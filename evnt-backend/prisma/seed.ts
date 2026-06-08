@@ -20,6 +20,8 @@ async function main() {
   console.log("Seeding Evnt catalog...");
 
   await prisma.chatMessage.deleteMany();
+  await prisma.directMessage.deleteMany();
+  await prisma.directConversation.deleteMany();
   await prisma.participation.deleteMany();
   await prisma.bookmark.deleteMany();
   await prisma.notification.deleteMany();

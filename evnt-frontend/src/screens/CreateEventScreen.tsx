@@ -31,8 +31,8 @@ type CreateEventScreenProps = {
   initialEvent?: EvntEvent;
   onCancel?: () => void;
   user: UserProfile;
-  onCreate: (event: EvntEvent) => void;
-  onUpdate?: (event: EvntEvent) => void;
+  onCreate: (event: EvntEvent) => boolean | void;
+  onUpdate?: (event: EvntEvent) => boolean | void;
 };
 
 type CreateField =
@@ -178,6 +178,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
   const [chatMode, setChatMode] = useState<ChatMode>(initialEvent?.chatMode ?? "Gruppo aperto");
   const [formError, setFormError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<CreateFieldErrors>({});
+  const [publishing, setPublishing] = useState(false);
 
   const parsedPrice = useMemo(() => Number.parseFloat(price.replace(",", ".")), [price]);
   const parsedCapacity = useMemo(() => Number.parseInt(capacity, 10), [capacity]);
@@ -228,6 +229,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     setChatMode(initialEvent?.chatMode ?? "Gruppo aperto");
     setFormError("");
     setFieldErrors({});
+    setPublishing(false);
   }, [initialEvent?.id]);
 
   useEffect(() => {
@@ -341,8 +343,6 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
       const normalizedPrice = price.trim();
       if (place.trim().length < 2) {
         errors.place = "Inserisci il luogo dell'evento.";
-      } else if (!selectedPlace && !initialEvent?.coordinates) {
-        errors.place = "Seleziona un luogo dai suggerimenti.";
       }
       if (address.length > maxAddressLength) {
         errors.address = `L'indirizzo puo contenere al massimo ${maxAddressLength} caratteri.`;
@@ -412,18 +412,44 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     setChatMode("Gruppo aperto");
     setFormError("");
     setFieldErrors({});
+    setPublishing(false);
   };
 
-  const publish = () => {
-    const dateTime = eventDateTime ?? new Date();
-    const subcategory = effectiveSubcategory;
-    const coordinates = selectedPlace?.coordinates ?? initialEvent?.coordinates;
-    if (!coordinates) {
-      showCreateErrors({ place: "Seleziona un luogo dai suggerimenti." });
-      setStep(1);
+  const publish = async () => {
+    if (publishing) {
       return;
     }
 
+    setPublishing(true);
+    const dateTime = eventDateTime ?? new Date();
+    const subcategory = effectiveSubcategory;
+    const canReuseInitialPlace =
+      Boolean(initialEvent?.coordinates) && place.trim().toLowerCase() === initialEvent?.place.trim().toLowerCase();
+    let resolvedPlace = selectedPlace;
+
+    if (!resolvedPlace && !canReuseInitialPlace) {
+      const [fallbackPlace] =
+        filteredPlaceSuggestions.length > 0
+          ? filteredPlaceSuggestions
+          : await searchPlacesWorldwide(place.trim(), originCoordinates).catch(() => []);
+      resolvedPlace = fallbackPlace ?? null;
+
+      if (resolvedPlace) {
+        setSelectedPlace(resolvedPlace);
+        setAddress((current) => current.trim() || resolvedPlace?.address || "");
+        setPlaceSuggestionsOpen(false);
+      }
+    }
+
+    const coordinates = resolvedPlace?.coordinates ?? (canReuseInitialPlace ? initialEvent?.coordinates : undefined);
+    if (!coordinates) {
+      showCreateErrors({ place: "Seleziona un luogo dai suggerimenti." });
+      setStep(1);
+      setPublishing(false);
+      return;
+    }
+
+    const eventCity = resolvedPlace?.city ?? (canReuseInitialPlace ? initialEvent?.city : undefined) ?? user.city;
     const event: EvntEvent = {
       id: initialEvent?.id ?? `created-${Date.now()}`,
       title: title.trim(),
@@ -431,10 +457,10 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
       date: formatEventDateLabel(date),
       time: time.trim(),
       place: place.trim(),
-      city: selectedPlace?.city ?? initialEvent?.city ?? user.city,
-      address: address.trim() || selectedPlace?.address || initialEvent?.address || place.trim(),
+      city: eventCity,
+      address: address.trim() || resolvedPlace?.address || initialEvent?.address || place.trim(),
       price: isFree ? 0 : parsedPrice,
-      distanceKm: selectedPlace?.distanceKm ?? initialEvent?.distanceKm ?? 0,
+      distanceKm: resolvedPlace?.distanceKm ?? initialEvent?.distanceKm ?? 0,
       affinity: initialEvent?.affinity ?? 0,
       popularity: initialEvent?.popularity ?? 0,
       participants: initialEvent?.participants ?? (countCreator ? 1 : 0),
@@ -450,7 +476,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
         selectedType.label.toLowerCase(),
         subcategory.toLowerCase(),
         `subcategory:${subcategory}`,
-        (selectedPlace?.city ?? user.city).toLowerCase()
+        eventCity ? `city:${eventCity}` : ""
       ].filter(Boolean),
       coordinates,
       dateTimeIso: dateTime.toISOString(),
@@ -460,11 +486,19 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     };
 
     if (editing) {
-      onUpdate?.(event);
+      const handled = onUpdate?.(event);
+      if (handled === false) {
+        setPublishing(false);
+        return;
+      }
       return;
     }
 
-    onCreate(event);
+    const handled = onCreate(event);
+    if (handled === false) {
+      setPublishing(false);
+      return;
+    }
     resetForm();
   };
 
@@ -478,7 +512,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     setStep((current) => current - 1);
   };
 
-  const goNext = () => {
+  const goNext = async () => {
     const errors = step === 2 ? validateBeforePublish() : validateStep(step);
     if (hasCreateErrors(errors)) {
       showCreateErrors(errors);
@@ -494,7 +528,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
       setStep((current) => current + 1);
       return;
     }
-    publish();
+    await publish();
   };
 
   const handlePlaceChange = (value: string) => {
@@ -836,10 +870,13 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
         <Pressable
           accessibilityLabel={step === 2 ? (editing ? "Salva modifiche evento" : "Pubblica evento") : "Vai al passaggio successivo"}
           accessibilityRole="button"
+          disabled={publishing}
           onPress={goNext}
-          style={styles.primaryButton}
+          style={[styles.primaryButton, publishing && styles.disabledPrimary]}
         >
-          <Text style={styles.primaryText}>{step === 2 ? (editing ? "✓ Salva modifiche" : "✓ Pubblica evento") : "Avanti →"}</Text>
+          <Text style={styles.primaryText}>
+            {publishing ? "Verifico luogo..." : step === 2 ? (editing ? "✓ Salva modifiche" : "✓ Pubblica evento") : "Avanti →"}
+          </Text>
         </Pressable>
       </View>
 

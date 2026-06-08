@@ -42,12 +42,20 @@ npm run db:up
 npm run prisma:generate
 npm run db:setup
 npm run seed
+npm run seed:demo
 npm run dev
 ```
 
 Il backend sarà disponibile su `http://localhost:4000/api`.
 
-Il seed resetta i dati applicativi locali e carica solo il catalogo di interessi e categorie. Utenti, eventi, chat e notifiche vengono creati dall'app.
+Il seed resetta i dati applicativi locali e carica solo il catalogo di interessi e categorie. Il comando `seed:demo` crea due utenti di test, senza eventi o messaggi precompilati.
+
+Credenziali demo:
+
+```text
+demo1@evnt.app / password123
+demo2@evnt.app / password123
+```
 
 Nota: il file `.env` contiene configurazioni locali e non deve essere pushato su GitHub.
 

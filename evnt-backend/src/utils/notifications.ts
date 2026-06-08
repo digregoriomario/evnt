@@ -1,6 +1,7 @@
 import { NotificationType } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { eventCleanupNow } from "./eventsCleanup";
+import { cityFromTags } from "./serialize";
 
 const scheduledNotificationIntervalMs = 60 * 60 * 1000;
 const hourMs = 60 * 60 * 1000;
@@ -68,6 +69,8 @@ function normalizeText(value?: string | null) {
 
 function cityFromPlace(place: string) {
   const parts = place.split(",").map((part) => part.trim()).filter(Boolean);
+  if (parts.length >= 4) return parts[parts.length - 3];
+  if (parts.length === 3) return parts[parts.length - 2];
   return parts.length > 1 ? parts[parts.length - 1] : "";
 }
 
@@ -206,7 +209,7 @@ export async function notifyNewMatchingEvent(eventId: number) {
     return;
   }
 
-  const eventCity = cityFromPlace(event.place);
+  const eventCity = cityFromTags(event.tags) ?? cityFromPlace(event.place);
   const users = await prisma.user.findMany({
     where: {
       id: { not: event.creatorId },
@@ -353,6 +356,15 @@ export async function notifyChatMessage(eventId: number, senderId: number, sende
         userId
       }))
   );
+}
+
+export async function notifyDirectMessage(recipientId: number, senderName: string) {
+  await createNotification({
+    message: `${senderName} ti ha scritto in privato.`,
+    title: "Nuovo messaggio",
+    type: "CHAT_MESSAGE",
+    userId: recipientId
+  });
 }
 
 export async function runScheduledEventNotifications(now = eventCleanupNow()) {

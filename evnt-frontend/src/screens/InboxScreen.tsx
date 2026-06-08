@@ -13,7 +13,16 @@ import {
   View
 } from "react-native";
 
-import { api, type ChatMessage, type UserSearchResult } from "../api";
+import {
+  api,
+  getRealtimeWebSocketUrl,
+  type ChatMessage,
+  type DirectConversation,
+  type DirectMessage,
+  type RealtimeDirectMessageEvent,
+  type RealtimeEventMessageEvent,
+  type UserSearchResult
+} from "../api";
 import { categoryColors, categoryEmojis, categorySoftColors, getEventSubcategoryLabel } from "../data/events";
 import { PillButton } from "../components/PillButton";
 import { colors, radius, shadow, spacing } from "../theme";
@@ -21,8 +30,10 @@ import { EvntEvent, UserProfile } from "../types";
 
 type InboxScreenProps = {
   events: EvntEvent[];
+  initialEventId?: string;
   onRefresh: () => Promise<void>;
   online: boolean;
+  onInitialEventHandled?: () => void;
   registrations: Set<string>;
   user: UserProfile;
   onOpenEvent: (event: EvntEvent) => void;
@@ -53,6 +64,7 @@ type DirectChat = {
   soft: string;
   city: string;
   interests: string[];
+  userId?: number;
 };
 
 type ChatRowProps = {
@@ -74,33 +86,17 @@ const normalizedEmail = (value: string) => value.trim().toLowerCase();
 
 const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-function emailFromName(name: string) {
-  const slug = name
-    .trim()
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, ".")
-    .replace(/^\.|\.$/g, "");
-
-  return `${slug || "utente"}@evnt.app`;
-}
-
-function profileMapFromContacts(contacts: DirectChat[]) {
-  return contacts.reduce<Record<string, DirectChat>>((acc, contact) => {
-    acc[contact.id] = contact;
-    return acc;
-  }, {});
-}
-
 function profileFromUser(user: UserSearchResult): DirectChat {
   return {
-    id: normalizedEmail(user.email),
+    id: `user-${user.id}`,
     email: normalizedEmail(user.email),
     name: user.name,
     status: "Conversazione privata",
     accent: colors.primary,
     soft: colors.surfaceMuted,
     city: user.city || "Citta non indicata",
-    interests: []
+    interests: [],
+    userId: user.id
   };
 }
 
@@ -113,6 +109,32 @@ function mapApiMessage(message: ChatMessage, user: UserProfile): DisplayMessage 
     senderId: String(message.sender.id),
     senderName: message.sender.name,
     mine: user.id ? message.sender.id === user.id : message.sender.name === user.name
+  };
+}
+
+function directChatFromConversation(conversation: DirectConversation): DirectChat {
+  return {
+    id: String(conversation.id),
+    email: normalizedEmail(conversation.participant.email),
+    name: conversation.participant.name,
+    status: "Conversazione privata",
+    accent: colors.primary,
+    soft: colors.surfaceMuted,
+    city: conversation.participant.city || "Citta non indicata",
+    interests: [],
+    userId: conversation.participant.id
+  };
+}
+
+function mapApiDirectMessage(message: DirectMessage, user: UserProfile): DisplayMessage {
+  return {
+    id: `direct-${message.id}`,
+    text: message.text,
+    sentAt: message.sentAt,
+    senderEmail: message.sender.email,
+    senderId: String(message.sender.id),
+    senderName: message.sender.name,
+    mine: user.id ? message.sender.id === user.id : message.sender.email === user.email
   };
 }
 
@@ -153,8 +175,10 @@ function lastPreview(messages: DisplayMessage[], fallback: string) {
 
 export function InboxScreen({
   events,
+  initialEventId,
   onRefresh,
   online,
+  onInitialEventHandled,
   registrations,
   user,
   onOpenEvent
@@ -166,7 +190,9 @@ export function InboxScreen({
   const [eventMessageMap, setEventMessageMap] = useState<Record<string, DisplayMessage[]>>({});
   const [directMessageMap, setDirectMessageMap] = useState<Record<string, DisplayMessage[]>>({});
   const [loadingEventId, setLoadingEventId] = useState<string | null>(null);
+  const [loadingDirectId, setLoadingDirectId] = useState<string | null>(null);
   const [sendingEventId, setSendingEventId] = useState<string | null>(null);
+  const [sendingDirectId, setSendingDirectId] = useState<string | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [peopleOpen, setPeopleOpen] = useState(false);
   const [peopleSearch, setPeopleSearch] = useState("");
@@ -193,6 +219,50 @@ export function InboxScreen({
 
   const query = search.trim().toLowerCase();
 
+  const eventRows = useMemo(
+    () =>
+      events
+        .filter((event) => {
+          const isOrganizer = event.organizer.trim().toLowerCase() === user.name.trim().toLowerCase();
+          return isOrganizer || registrations.has(event.id);
+        })
+        .map((event) => {
+          const messages = eventMessageMap[event.id] ?? [];
+          const last = messages[messages.length - 1];
+          const subcategory = getEventSubcategoryLabel(event);
+          const participantLabel =
+            event.participants === 1 ? "1 partecipante" : `${event.participants} partecipanti`;
+          return {
+            event,
+            preview: lastPreview(messages, "Chat evento pronta"),
+            subtitle: `${subcategory} · ${participantLabel}`,
+            time: formatChatTime(last?.sentAt || event.dateTimeIso)
+          };
+        })
+        .sort((a, b) => {
+          const messagesA = eventMessageMap[a.event.id] ?? [];
+          const messagesB = eventMessageMap[b.event.id] ?? [];
+          const lastA = messagesA[messagesA.length - 1]?.sentAt || a.event.dateTimeIso;
+          const lastB = messagesB[messagesB.length - 1]?.sentAt || b.event.dateTimeIso;
+          return (lastB ? Date.parse(lastB) : 0) - (lastA ? Date.parse(lastA) : 0);
+        })
+        .filter(({ event, preview, subtitle }) => {
+          if (!query) {
+            return true;
+          }
+
+          return [
+            event.title,
+            event.place,
+            event.city,
+            event.chatMode,
+            subtitle,
+            preview
+          ].join(" ").toLowerCase().includes(query);
+        }),
+    [eventMessageMap, events, query, registrations, user.name]
+  );
+
   const directRows = useMemo(
     () =>
       [...directChatIds]
@@ -206,6 +276,13 @@ export function InboxScreen({
             preview: lastPreview(messages, "Nessun messaggio ancora"),
             time: formatChatTime(last?.sentAt)
           };
+        })
+        .sort((a, b) => {
+          const messagesA = directMessageMap[a.chat.id] ?? [];
+          const messagesB = directMessageMap[b.chat.id] ?? [];
+          const lastA = messagesA[messagesA.length - 1]?.sentAt;
+          const lastB = messagesB[messagesB.length - 1]?.sentAt;
+          return (lastB ? Date.parse(lastB) : 0) - (lastA ? Date.parse(lastA) : 0);
         })
         .filter(({ chat, preview }) => {
           if (!query) {
@@ -233,6 +310,153 @@ export function InboxScreen({
   const composerLocked = Boolean(selectedEvent?.chatMode === "Solo annunci" && !organizerCanWrite);
   const canSend = draft.trim().length > 0 && !composerLocked && selectedTarget !== null;
 
+  const mergeDirectConversations = useCallback(
+    (conversations: DirectConversation[], replace = false) => {
+      setDirectProfiles((current) => {
+        const next = { ...current };
+        conversations.forEach((conversation) => {
+          const chat = directChatFromConversation(conversation);
+          next[chat.id] = chat;
+        });
+        return next;
+      });
+      const incomingIds = conversations.map((conversation) => String(conversation.id));
+      setDirectChatIds((current) => (replace ? new Set(incomingIds) : new Set([...current, ...incomingIds])));
+      setDirectMessageMap((current) => {
+        const next = { ...current };
+        conversations.forEach((conversation) => {
+          const chatId = String(conversation.id);
+          if (!conversation.lastMessage) {
+            next[chatId] = next[chatId] ?? [];
+            return;
+          }
+
+          const mappedMessage = mapApiDirectMessage(conversation.lastMessage, user);
+          const existing = next[chatId] ?? [];
+          const withoutDuplicate = existing.filter((message) => message.id !== mappedMessage.id);
+          next[chatId] = [...withoutDuplicate, mappedMessage].sort(
+                (a, b) => new Date(a.sentAt).getTime() - new Date(b.sentAt).getTime()
+              );
+        });
+        return next;
+      });
+    },
+    [user]
+  );
+
+  const loadDirectChats = useCallback(async () => {
+    if (!online) {
+      return;
+    }
+
+    try {
+      mergeDirectConversations(await api.directChats(), true);
+    } catch {
+      // Keep the current chat list visible if refresh fails.
+    }
+  }, [mergeDirectConversations, online]);
+
+  const upsertDirectMessage = useCallback(
+    (conversationId: string, message: DirectMessage) => {
+      const mappedMessage = mapApiDirectMessage(message, user);
+      setDirectMessageMap((current) => {
+        const existing = current[conversationId] ?? [];
+        const withoutDuplicate = existing.filter((item) => item.id !== mappedMessage.id);
+        return {
+          ...current,
+          [conversationId]: [...withoutDuplicate, mappedMessage].sort(
+            (a, b) => Date.parse(a.sentAt) - Date.parse(b.sentAt)
+          )
+        };
+      });
+    },
+    [user]
+  );
+
+  const upsertEventMessage = useCallback(
+    (eventId: string, message: ChatMessage) => {
+      const mappedMessage = mapApiMessage(message, user);
+      setEventMessageMap((current) => {
+        const existing = current[eventId] ?? [];
+        const withoutDuplicate = existing.filter((item) => item.id !== mappedMessage.id);
+        return {
+          ...current,
+          [eventId]: [...withoutDuplicate, mappedMessage].sort(
+            (a, b) => Date.parse(a.sentAt) - Date.parse(b.sentAt)
+          )
+        };
+      });
+    },
+    [user]
+  );
+
+  const handleRealtimeEvent = useCallback(
+    (event: RealtimeDirectMessageEvent | RealtimeEventMessageEvent) => {
+      if (event.type === "direct-message") {
+        mergeDirectConversations([event.payload.conversation]);
+        upsertDirectMessage(String(event.payload.conversation.id), event.payload.message);
+        return;
+      }
+
+      upsertEventMessage(event.payload.eventId, event.payload.message);
+    },
+    [mergeDirectConversations, upsertDirectMessage, upsertEventMessage]
+  );
+
+  useEffect(() => {
+    if (!online) {
+      return;
+    }
+
+    let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
+    let socket: WebSocket | undefined;
+    let stopped = false;
+
+    const connect = () => {
+      const url = getRealtimeWebSocketUrl();
+      if (!url || stopped) {
+        return;
+      }
+
+      socket = new WebSocket(url);
+      socket.onmessage = (message) => {
+        if (typeof message.data !== "string") {
+          return;
+        }
+
+        try {
+          const event = JSON.parse(message.data) as
+            | RealtimeDirectMessageEvent
+            | RealtimeEventMessageEvent
+            | { type?: string };
+          if (event.type === "direct-message" || event.type === "event-message") {
+            handleRealtimeEvent(event as RealtimeDirectMessageEvent | RealtimeEventMessageEvent);
+          }
+        } catch {
+          // Ignore malformed realtime payloads.
+        }
+      };
+      socket.onclose = () => {
+        if (!stopped) {
+          reconnectTimer = setTimeout(connect, 1500);
+        }
+      };
+      socket.onerror = () => {
+        socket?.close();
+      };
+    };
+
+    connect();
+
+    return () => {
+      stopped = true;
+      if (reconnectTimer) {
+        clearTimeout(reconnectTimer);
+      }
+      socket?.close();
+    };
+  }, [handleRealtimeEvent, online, user.email]);
+
   useEffect(() => {
     if (!peopleOpen) {
       return;
@@ -259,7 +483,7 @@ export function InboxScreen({
       return;
     }
 
-    const localProfile = directProfiles[email];
+    const localProfile = Object.values(directProfiles).find((profile) => profile.email === email);
     if (localProfile) {
       setPeopleSearching(false);
       setPeopleSearchResult(localProfile);
@@ -303,6 +527,20 @@ export function InboxScreen({
     };
   }, [directProfiles, online, peopleOpen, peopleSearch, user.email]);
 
+  useEffect(() => {
+    void loadDirectChats();
+  }, [loadDirectChats]);
+
+  useEffect(() => {
+    if (!initialEventId || !eventRows.some((row) => row.event.id === initialEventId)) {
+      return;
+    }
+
+    setDraft("");
+    setSelectedTarget({ type: "event", id: initialEventId });
+    onInitialEventHandled?.();
+  }, [eventRows, initialEventId, onInitialEventHandled]);
+
   const loadEventMessages = useCallback(
     async (eventId: string, showLoading = true) => {
       if (!online || !isBackendEventId(eventId)) {
@@ -330,17 +568,48 @@ export function InboxScreen({
     [online, user]
   );
 
+  const loadDirectMessages = useCallback(
+    async (conversationId: string, showLoading = true) => {
+      if (!online) {
+        return;
+      }
+
+      if (showLoading) {
+        setLoadingDirectId(conversationId);
+      }
+
+      try {
+        const messages = await api.directMessages(conversationId);
+        setDirectMessageMap((current) => ({
+          ...current,
+          [conversationId]: messages.map((message) => mapApiDirectMessage(message, user))
+        }));
+      } catch {
+        // Keep the current conversation visible if refresh fails.
+      } finally {
+        if (showLoading) {
+          setLoadingDirectId(null);
+        }
+      }
+    },
+    [online, user]
+  );
+
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
     try {
       await onRefresh();
+      await loadDirectChats();
       if (selectedEvent) {
         await loadEventMessages(selectedEvent.id, false);
+      }
+      if (selectedDirect) {
+        await loadDirectMessages(selectedDirect.id, false);
       }
     } finally {
       setRefreshing(false);
     }
-  }, [loadEventMessages, onRefresh, selectedEvent?.id]);
+  }, [loadDirectChats, loadDirectMessages, loadEventMessages, onRefresh, selectedDirect?.id, selectedEvent?.id]);
 
   useEffect(() => {
     if (!selectedEvent) {
@@ -350,26 +619,37 @@ export function InboxScreen({
     void loadEventMessages(selectedEvent.id);
   }, [loadEventMessages, selectedEvent?.id]);
 
+  useEffect(() => {
+    if (!selectedDirect) {
+      return;
+    }
+
+    void loadDirectMessages(selectedDirect.id);
+  }, [loadDirectMessages, selectedDirect?.id]);
+
   const openTarget = (target: ChatTarget) => {
     setDraft("");
     setSelectedTarget(target);
   };
 
-  const startDirectChat = (chat: DirectChat) => {
-    const chatId = normalizedEmail(chat.email);
-    const normalizedChat = { ...chat, id: chatId, email: chatId };
+  const startDirectChat = async (chat: DirectChat) => {
+    if (!online) {
+      setPeopleSearchError("Serve il backend attivo per avviare una chat privata.");
+      return;
+    }
 
-    setDirectProfiles((current) => ({ ...current, [chatId]: normalizedChat }));
-    setDirectChatIds((current) => {
-      const next = new Set(current);
-      next.add(chatId);
-      return next;
-    });
-    setPeopleOpen(false);
-    setPeopleSearch("");
-    setPeopleSearchResult(null);
-    setPeopleSearchError("");
-    openTarget({ type: "direct", id: chatId });
+    try {
+      const conversation = await api.startDirectChat(chat.email);
+      mergeDirectConversations([conversation]);
+      setPeopleOpen(false);
+      setPeopleSearch("");
+      setPeopleSearchResult(null);
+      setPeopleSearchError("");
+      openTarget({ type: "direct", id: String(conversation.id) });
+      await loadDirectMessages(String(conversation.id), false);
+    } catch {
+      setPeopleSearchError("Non riesco ad avviare questa chat adesso.");
+    }
   };
 
   const directContactFromMessage = (message: DisplayMessage) => {
@@ -377,8 +657,12 @@ export function InboxScreen({
       return null;
     }
 
-    const email = normalizedEmail(message.senderEmail ?? emailFromName(message.senderName));
-    return directProfiles[email] ?? {
+    if (!message.senderEmail) {
+      return null;
+    }
+
+    const email = normalizedEmail(message.senderEmail);
+    return Object.values(directProfiles).find((profile) => profile.email === email) ?? {
       id: email,
       email,
       name: message.senderName,
@@ -416,6 +700,30 @@ export function InboxScreen({
     }));
   };
 
+  const replaceOptimisticDirectMessage = (
+    conversationId: string,
+    localId: string,
+    nextMessage: DisplayMessage
+  ) => {
+    setDirectMessageMap((current) => ({
+      ...current,
+      [conversationId]: (current[conversationId] ?? []).some((message) => message.id === nextMessage.id)
+        ? (current[conversationId] ?? []).filter((message) => message.id !== localId)
+        : (current[conversationId] ?? []).map((message) =>
+            message.id === localId ? nextMessage : message
+          )
+    }));
+  };
+
+  const markOptimisticDirectMessageLocal = (conversationId: string, localId: string) => {
+    setDirectMessageMap((current) => ({
+      ...current,
+      [conversationId]: (current[conversationId] ?? []).map((message) =>
+        message.id === localId ? { ...message, pending: false, failed: true } : message
+      )
+    }));
+  };
+
   const replaceOptimisticEventMessage = (
     eventId: string,
     localId: string,
@@ -423,9 +731,11 @@ export function InboxScreen({
   ) => {
     setEventMessageMap((current) => ({
       ...current,
-      [eventId]: (current[eventId] ?? []).map((message) =>
-        message.id === localId ? nextMessage : message
-      )
+      [eventId]: (current[eventId] ?? []).some((message) => message.id === nextMessage.id)
+        ? (current[eventId] ?? []).filter((message) => message.id !== localId)
+        : (current[eventId] ?? []).map((message) =>
+            message.id === localId ? nextMessage : message
+          )
     }));
   };
 
@@ -450,14 +760,35 @@ export function InboxScreen({
       sentAt: new Date().toISOString(),
       senderName: user.name,
       mine: true,
-      pending:
-        selectedTarget.type === "event" && online && isBackendEventId(selectedTarget.id)
+      pending: online && (selectedTarget.type === "direct" || isBackendEventId(selectedTarget.id))
     };
 
     setDraft("");
 
     if (selectedTarget.type === "direct") {
       appendDirectMessage(selectedTarget.id, localMessage);
+      if (!online) {
+        markOptimisticDirectMessageLocal(selectedTarget.id, localMessage.id);
+        return;
+      }
+
+      setSendingDirectId(selectedTarget.id);
+      api
+        .sendDirectMessage(selectedTarget.id, text)
+        .then((message) => {
+          replaceOptimisticDirectMessage(
+            selectedTarget.id,
+            localMessage.id,
+            mapApiDirectMessage(message, user)
+          );
+          void loadDirectChats();
+        })
+        .catch(() => {
+          markOptimisticDirectMessageLocal(selectedTarget.id, localMessage.id);
+        })
+        .finally(() => {
+          setSendingDirectId(null);
+        });
       return;
     }
 
@@ -552,6 +883,9 @@ export function InboxScreen({
           {loadingEventId === selectedEvent?.id ? (
             <Text style={styles.loadingText}>Carico i messaggi...</Text>
           ) : null}
+          {loadingDirectId === selectedDirect?.id ? (
+            <Text style={styles.loadingText}>Carico i messaggi...</Text>
+          ) : null}
 
           {selectedMessages.length === 0 ? (
             <View style={styles.emptyConversation}>
@@ -588,9 +922,19 @@ export function InboxScreen({
             <Pressable
               accessibilityLabel="Invia messaggio"
               accessibilityRole="button"
-              disabled={!canSend || sendingEventId === selectedEvent?.id}
+              disabled={
+                !canSend ||
+                sendingEventId === selectedEvent?.id ||
+                sendingDirectId === selectedDirect?.id
+              }
               onPress={sendMessage}
-              style={[styles.sendButton, (!canSend || sendingEventId === selectedEvent?.id) && styles.sendButtonDisabled]}
+              style={[
+                styles.sendButton,
+                (!canSend ||
+                  sendingEventId === selectedEvent?.id ||
+                  sendingDirectId === selectedDirect?.id) &&
+                  styles.sendButtonDisabled
+              ]}
             >
               <Ionicons color={colors.surface} name="send" size={18} />
             </Pressable>
@@ -619,7 +963,7 @@ export function InboxScreen({
         <View style={styles.header}>
           <View>
             <Text style={styles.title}>Chat</Text>
-            <Text style={styles.subtitle}>Conversazioni private.</Text>
+            <Text style={styles.subtitle}>Eventi e conversazioni private.</Text>
           </View>
         </View>
 
@@ -654,6 +998,29 @@ export function InboxScreen({
           </View>
           <Ionicons color={colors.muted} name="chevron-forward" size={20} />
         </Pressable>
+
+        <View style={styles.section}>
+          <Text style={styles.sectionTitle}>Chat eventi</Text>
+          {eventRows.length ? (
+            eventRows.map(({ event, preview, subtitle, time }) => (
+              <ChatRow
+                key={event.id}
+                accent={categoryColors[event.category]}
+                iconText={categoryEmojis[event.category]}
+                onPress={() => openTarget({ type: "event", id: event.id })}
+                preview={preview}
+                soft={categorySoftColors[event.category]}
+                subtitle={subtitle}
+                time={time}
+                title={event.title}
+              />
+            ))
+          ) : (
+            <Text style={styles.emptyListText}>
+              Partecipa a un evento o creane uno per vedere qui la chat di gruppo.
+            </Text>
+          )}
+        </View>
 
         <View style={styles.section}>
           <Text style={styles.sectionTitle}>Chat private</Text>

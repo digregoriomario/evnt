@@ -56,12 +56,43 @@ export type ChatMessage = {
   sender: { id: number; email?: string; name: string; image?: string };
 };
 
+export type DirectMessage = {
+  conversationId: number;
+  id: number;
+  text: string;
+  sentAt: string;
+  sender: { id: number; email: string; name: string; avatar?: string; city?: string };
+};
+
 export type UserSearchResult = {
   id: number;
   email: string;
   name: string;
   city: string;
   avatar?: string;
+};
+
+export type DirectConversation = {
+  id: number;
+  lastMessage?: DirectMessage;
+  participant: UserSearchResult;
+  updatedAt: string;
+};
+
+export type RealtimeDirectMessageEvent = {
+  payload: {
+    conversation: DirectConversation;
+    message: DirectMessage;
+  };
+  type: "direct-message";
+};
+
+export type RealtimeEventMessageEvent = {
+  payload: {
+    eventId: string;
+    message: ChatMessage;
+  };
+  type: "event-message";
 };
 
 export type NotificationType =
@@ -201,6 +232,33 @@ export const api = {
       method: "POST",
       body: { text }
     });
+    return message;
+  },
+  async directChats(): Promise<DirectConversation[]> {
+    const { conversations } = await apiRequest<{ conversations: DirectConversation[] }>("/chats/direct");
+    return conversations;
+  },
+  async startDirectChat(email: string): Promise<DirectConversation> {
+    const { conversation } = await apiRequest<{ conversation: DirectConversation }>("/chats/direct", {
+      method: "POST",
+      body: { email }
+    });
+    return conversation;
+  },
+  async directMessages(conversationId: string): Promise<DirectMessage[]> {
+    const { messages } = await apiRequest<{ messages: DirectMessage[] }>(
+      `/chats/direct/${conversationId}/messages`
+    );
+    return messages;
+  },
+  async sendDirectMessage(conversationId: string, text: string): Promise<DirectMessage> {
+    const { message } = await apiRequest<{ message: DirectMessage }>(
+      `/chats/direct/${conversationId}/messages`,
+      {
+        method: "POST",
+        body: { text }
+      }
+    );
     return message;
   },
 

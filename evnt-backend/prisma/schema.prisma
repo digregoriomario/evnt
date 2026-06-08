@@ -49,6 +49,9 @@ model User {
   bookmarks     Bookmark[]
   participations Participation[]
   messages      ChatMessage[]
+  directConversationsA DirectConversation[] @relation("DirectConversationUserA")
+  directConversationsB DirectConversation[] @relation("DirectConversationUserB")
+  directMessages DirectMessage[] @relation("DirectMessageSender")
   notifications Notification[]
   pushTokens    PushToken[]
 
@@ -154,6 +157,38 @@ model ChatMessage {
 
   @@index([eventId])
   @@map("chat_messages")
+}
+
+model DirectConversation {
+  id        Int      @id @default(autoincrement()) @map("conversation_id")
+  userAId   Int      @map("user_a_id")
+  userBId   Int      @map("user_b_id")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  userA    User            @relation("DirectConversationUserA", fields: [userAId], references: [id], onDelete: Cascade)
+  userB    User            @relation("DirectConversationUserB", fields: [userBId], references: [id], onDelete: Cascade)
+  messages DirectMessage[]
+
+  @@unique([userAId, userBId])
+  @@index([userAId])
+  @@index([userBId])
+  @@map("direct_conversations")
+}
+
+model DirectMessage {
+  id             Int      @id @default(autoincrement()) @map("direct_message_id")
+  conversationId Int      @map("conversation_id")
+  senderId       Int      @map("sender_id")
+  text           String   @db.Text
+  sentAt         DateTime @default(now()) @map("sent_at")
+
+  conversation DirectConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+  sender       User               @relation("DirectMessageSender", fields: [senderId], references: [id], onDelete: Cascade)
+
+  @@index([conversationId])
+  @@index([senderId])
+  @@map("direct_messages")
 }
 
 model Notification {

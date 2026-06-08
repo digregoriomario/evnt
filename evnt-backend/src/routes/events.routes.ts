@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { asyncHandler, HttpError } from "../utils/http";
 import { authOptional, authRequired } from "../middleware/auth";
+import { publishToUser } from "../realtime";
 import { closeExpiredEvents } from "../utils/eventsCleanup";
 import {
   notifyCapacityMilestones,
@@ -39,6 +40,13 @@ const eventInclude = {
   creator: true,
   _count: { select: { participations: true } }
 } satisfies Prisma.EventInclude;
+
+const chatSenderSelect = {
+  email: true,
+  id: true,
+  image: true,
+  name: true
+} satisfies Prisma.UserSelect;
 
 async function buildContext(userId?: number) {
   if (!userId) return { favorites: new Set<number>(), registered: new Set<number>(), interests: new Set<string>() };
@@ -99,14 +107,71 @@ async function findOrCreateCategory(name: string) {
 }
 
 function normalizeEventTags(tags: string[], subcategory?: string) {
+  const seen = new Set<string>();
   const publicTags = tags
     .map((tag) => tag.trim())
-    .filter((tag) => tag && !tag.startsWith(subcategoryTagPrefix));
+    .filter((tag) => {
+      if (!tag || tag.startsWith(subcategoryTagPrefix)) {
+        return false;
+      }
+      const key = tag.toLowerCase();
+      if (seen.has(key)) {
+        return false;
+      }
+      seen.add(key);
+      return true;
+    });
   const normalizedSubcategory = subcategory?.trim();
 
   return normalizedSubcategory
     ? [...publicTags, `${subcategoryTagPrefix}${normalizedSubcategory}`]
     : publicTags;
+}
+
+function serializeChatMessage(message: {
+  eventId: number;
+  id: number;
+  sender: {
+    email: string;
+    id: number;
+    image: string | null;
+    name: string;
+  };
+  sentAt: Date;
+  text: string;
+}) {
+  return {
+    id: message.id,
+    eventId: message.eventId,
+    text: message.text,
+    sentAt: message.sentAt.toISOString(),
+    sender: {
+      id: message.sender.id,
+      email: message.sender.email,
+      name: message.sender.name,
+      image: message.sender.image ?? undefined
+    }
+  };
+}
+
+async function getEventChatForUser(eventId: number, userId: number) {
+  if (!Number.isInteger(eventId)) {
+    throw new HttpError(400, "Evento non valido");
+  }
+
+  const event = await prisma.event.findUnique({
+    where: { id: eventId },
+    include: { participations: { select: { userId: true } } }
+  });
+  if (!event) throw new HttpError(404, "Evento non trovato");
+
+  const canAccess =
+    event.creatorId === userId || event.participations.some((participation) => participation.userId === userId);
+  if (!canAccess) {
+    throw new HttpError(403, "Iscriviti all'evento per accedere alla chat");
+  }
+
+  return event;
 }
 
 // GET /events
@@ -187,7 +252,7 @@ eventsRouter.get(
 
 const createSchema = z.object({
   title: z.string().min(1),
-  description: z.string().min(1),
+  description: z.string().max(2000).default(""),
   dateHour: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "Invalid date"),
   place: z.string().min(1),
   latitude: z.number(),
@@ -369,28 +434,16 @@ eventsRouter.delete(
 // ---- Chat messages -------------------------------------------------------
 eventsRouter.get(
   "/:id/messages",
-  authOptional,
+  authRequired,
   asyncHandler(async (req, res) => {
     const eventId = Number(req.params.id);
+    await getEventChatForUser(eventId, req.userId!);
     const messages = await prisma.chatMessage.findMany({
       where: { eventId },
       orderBy: { sentAt: "asc" },
-      include: { sender: { select: { id: true, name: true, email: true, image: true } } }
+      include: { sender: { select: chatSenderSelect } }
     });
-    res.json({
-      messages: messages.map((m) => ({
-        id: m.id,
-        eventId: m.eventId,
-        text: m.text,
-        sentAt: m.sentAt.toISOString(),
-        sender: {
-          id: m.sender.id,
-          email: m.sender.email,
-          name: m.sender.name,
-          image: m.sender.image ?? undefined
-        }
-      }))
-    });
+    res.json({ messages: messages.map(serializeChatMessage) });
   })
 );
 
@@ -402,29 +455,23 @@ eventsRouter.post(
   asyncHandler(async (req, res) => {
     const eventId = Number(req.params.id);
     const { text } = messageSchema.parse(req.body);
-    const event = await prisma.event.findUnique({ where: { id: eventId } });
-    if (!event) throw new HttpError(404, "Evento non trovato");
+    const event = await getEventChatForUser(eventId, req.userId!);
     if (event.chatType === "ANNOUNCEMENTS" && event.creatorId !== req.userId) {
       throw new HttpError(403, "Solo il creatore puo scrivere in questa chat");
     }
     const message = await prisma.chatMessage.create({
       data: { eventId, senderId: req.userId!, text },
-      include: { sender: { select: { id: true, name: true, email: true, image: true } } }
+      include: { sender: { select: chatSenderSelect } }
+    });
+    const serializedMessage = serializeChatMessage(message);
+    const audience = [...new Set([event.creatorId, ...event.participations.map((participation) => participation.userId)])];
+    audience.forEach((userId) => {
+      publishToUser(userId, {
+        payload: { eventId: String(eventId), message: serializedMessage },
+        type: "event-message"
+      });
     });
     await notifyChatMessage(eventId, req.userId!, message.sender.name);
-    res.status(201).json({
-      message: {
-        id: message.id,
-        eventId,
-        text: message.text,
-        sentAt: message.sentAt.toISOString(),
-        sender: {
-          id: message.sender.id,
-          email: message.sender.email,
-          name: message.sender.name,
-          image: message.sender.image ?? undefined
-        }
-      }
-    });
+    res.status(201).json({ message: serializedMessage });
   })
 );
