@@ -74,7 +74,6 @@ export default function App() {
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushRegistrationAttemptRef = useRef<string | null>(null);
-  const pushSkipWarningRef = useRef<string | null>(null);
 
   const selectedEvent = useMemo(
     () => events.find((event) => event.id === selectedEventId) ?? events[0],
@@ -686,7 +685,6 @@ export default function App() {
     setNotifications([]);
     setPushToken(null);
     pushRegistrationAttemptRef.current = null;
-    pushSkipWarningRef.current = null;
     setUser(null);
     setScreen("auth");
     setPreviousScreen("home");
@@ -857,12 +855,6 @@ export default function App() {
 
       if (result.status === "registered") {
         await syncPushToken(result.token).catch(() => undefined);
-      } else {
-        const warningKey = `${attemptKey}:${result.reason}`;
-        if (pushSkipWarningRef.current !== warningKey) {
-          pushSkipWarningRef.current = warningKey;
-          console.warn(`Push notifications skipped: ${result.reason}.`);
-        }
       }
     };
 

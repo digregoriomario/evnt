@@ -287,5 +287,7 @@ export const api = {
   registerPushToken: (payload: PushTokenPayload) =>
     apiRequest<void>("/notifications/push-token", { method: "POST", body: payload }),
   unregisterPushToken: (token: string) =>
-    apiRequest<void>("/notifications/push-token", { method: "DELETE", body: { token } })
+    apiRequest<void>("/notifications/push-token", { method: "DELETE", body: { token } }),
+  pushStatus: () => apiRequest<{ activeTokens: number }>("/notifications/push-status"),
+  testPush: () => apiRequest<{ ok: boolean }>("/notifications/test-push", { method: "POST" })
 };

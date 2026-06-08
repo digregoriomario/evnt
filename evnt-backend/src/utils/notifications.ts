@@ -367,6 +367,16 @@ export async function notifyDirectMessage(recipientId: number, senderName: strin
   });
 }
 
+export async function notifyTestPush(userId: number) {
+  await createNotification({
+    message: "Se leggi questa notifica, le push di Evnt sono configurate correttamente.",
+    pushMode: "await",
+    title: "Test push Evnt",
+    type: "CHAT_MESSAGE",
+    userId
+  });
+}
+
 export async function runScheduledEventNotifications(now = eventCleanupNow()) {
   const savedReminderAfter = new Date(now.getTime() + hourMs);
   const savedReminderBefore = new Date(now.getTime() + dayMs);

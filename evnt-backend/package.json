@@ -5,18 +5,18 @@
   "description": "Backend REST API for the Evnt mobile app",
   "main": "dist/src/index.js",
   "engines": {
-    "node": ">=20 <25"
+    "node": ">=20 <26"
   },
   "scripts": {
-    "dev": "tsx watch src/index.ts",
+    "dev": "tsx src/scripts/check-port.ts && tsx watch src/index.ts",
     "build": "tsc -p tsconfig.json",
     "start": "node dist/src/index.js",
     "typecheck": "tsc --noEmit",
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
-    "prisma:generate": "prisma generate",
-    "prisma:push": "prisma db push --accept-data-loss",
-    "prisma:postgis": "prisma db execute --file prisma/sql/postgis.sql --schema prisma/schema.prisma",
+    "prisma:generate": "PRISMA_HIDE_UPDATE_MESSAGE=true prisma generate --no-hints",
+    "prisma:push": "PRISMA_HIDE_UPDATE_MESSAGE=true prisma db push",
+    "prisma:postgis": "PRISMA_HIDE_UPDATE_MESSAGE=true prisma db execute --file prisma/sql/postgis.sql --schema prisma/schema.prisma",
     "db:setup": "npm run prisma:push && npm run prisma:postgis",
     "seed": "tsx prisma/seed.ts",
     "seed:demo": "tsx prisma/demo-accounts.ts"

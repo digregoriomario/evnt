@@ -1,5 +1,5 @@
 import Constants from "expo-constants";
-import * as Notifications from "expo-notifications";
+import * as Device from "expo-device";
 import { Platform } from "react-native";
 
 export type PushNotificationData = {
@@ -10,20 +10,56 @@ export type PushNotificationData = {
 
 type PushRegistrationResult =
   | { status: "registered"; token: string }
-  | { reason: "denied" | "missing-project-id" | "unsupported" | "unavailable"; status: "skipped" };
+  | {
+      reason:
+        | "denied"
+        | "expo-go"
+        | "missing-project-id"
+        | "simulator"
+        | "unsupported"
+        | "unavailable";
+      status: "skipped";
+    };
 
 type ListenerSubscription = {
   remove: () => void;
 };
 
-Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldPlaySound: true,
-    shouldSetBadge: true,
-    shouldShowBanner: true,
-    shouldShowList: true
-  })
-});
+type NotificationsModule = typeof import("expo-notifications");
+
+let notificationsModulePromise: Promise<NotificationsModule> | null = null;
+let notificationHandlerConfigured = false;
+
+function runsInExpoGo() {
+  return Constants.appOwnership === "expo";
+}
+
+function canUseNativeNotifications() {
+  return Platform.OS !== "web" && !runsInExpoGo();
+}
+
+async function loadNotificationsModule() {
+  if (!canUseNativeNotifications()) {
+    return null;
+  }
+
+  notificationsModulePromise ??= import("expo-notifications");
+  const Notifications = await notificationsModulePromise;
+
+  if (!notificationHandlerConfigured) {
+    Notifications.setNotificationHandler({
+      handleNotification: async () => ({
+        shouldPlaySound: true,
+        shouldSetBadge: true,
+        shouldShowBanner: true,
+        shouldShowList: true
+      })
+    });
+    notificationHandlerConfigured = true;
+  }
+
+  return Notifications;
+}
 
 function getProjectId() {
   const extra = Constants.expoConfig?.extra as { eas?: { projectId?: string } } | undefined;
@@ -57,6 +93,19 @@ function notificationDataFromUnknown(data: unknown): PushNotificationData {
 
 export async function registerForPushNotificationsAsync(): Promise<PushRegistrationResult> {
   if (Platform.OS === "web") {
+    return { reason: "unsupported", status: "skipped" };
+  }
+
+  if (runsInExpoGo()) {
+    return { reason: "expo-go", status: "skipped" };
+  }
+
+  if (!Device.isDevice) {
+    return { reason: "simulator", status: "skipped" };
+  }
+
+  const Notifications = await loadNotificationsModule();
+  if (!Notifications) {
     return { reason: "unsupported", status: "skipped" };
   }
 
@@ -95,21 +144,63 @@ export async function registerForPushNotificationsAsync(): Promise<PushRegistrat
 }
 
 export function addPushTokenRefreshListener(listener: (token: string) => void): ListenerSubscription {
-  if (Platform.OS === "web") {
+  if (!canUseNativeNotifications()) {
     return { remove: () => undefined };
   }
 
-  return Notifications.addPushTokenListener((token) => listener(token.data));
+  let removed = false;
+  let subscription: ListenerSubscription | undefined;
+
+  void loadNotificationsModule()
+    .then((Notifications) => {
+      if (!Notifications || removed) {
+        return;
+      }
+
+      subscription = Notifications.addPushTokenListener((token) => listener(token.data));
+      if (removed) {
+        subscription.remove();
+      }
+    })
+    .catch(() => undefined);
+
+  return {
+    remove: () => {
+      removed = true;
+      subscription?.remove();
+    }
+  };
 }
 
 export function addPushNotificationResponseListener(
   listener: (data: PushNotificationData) => void
 ): ListenerSubscription {
-  if (Platform.OS === "web") {
+  if (!canUseNativeNotifications()) {
     return { remove: () => undefined };
   }
 
-  return Notifications.addNotificationResponseReceivedListener((response) => {
-    listener(notificationDataFromUnknown(response.notification.request.content.data));
-  });
+  let removed = false;
+  let subscription: ListenerSubscription | undefined;
+
+  void loadNotificationsModule()
+    .then((Notifications) => {
+      if (!Notifications || removed) {
+        return;
+      }
+
+      subscription = Notifications.addNotificationResponseReceivedListener((response) => {
+        listener(notificationDataFromUnknown(response.notification.request.content.data));
+      });
+      if (removed) {
+        subscription.remove();
+      }
+    })
+    .catch(() => undefined);
+
+  return {
+    remove: () => {
+      removed = true;
+      subscription?.remove();
+    }
+  };
 }

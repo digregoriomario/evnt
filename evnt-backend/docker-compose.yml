@@ -33,9 +33,12 @@ services:
       JWT_SECRET: change-me-in-production
       JWT_EXPIRES_IN: 7d
       CORS_ORIGIN: "*"
+      NPM_CONFIG_AUDIT: "false"
+      NPM_CONFIG_FUND: "false"
+      PRISMA_HIDE_UPDATE_MESSAGE: "true"
     ports:
       - "4000:4000"
-    command: sh -c "node -e \"require.resolve('ws')\" >/dev/null 2>&1 || npm install ws @types/ws; npx prisma db push --accept-data-loss && npx prisma db execute --file prisma/sql/postgis.sql --schema prisma/schema.prisma && npm run dev"
+    command: sh -c "node -e \"require.resolve('ws')\" >/dev/null 2>&1 || npm install --no-audit --no-fund --silent ws @types/ws; npx prisma db push --skip-generate && npx prisma db execute --file prisma/sql/postgis.sql --schema prisma/schema.prisma && npx prisma generate --no-hints && npm run dev"
     volumes:
       - ./src:/app/src
       - ./prisma:/app/prisma

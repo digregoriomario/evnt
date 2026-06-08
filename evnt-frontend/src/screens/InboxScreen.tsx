@@ -1080,60 +1080,81 @@ function PeoplePickerModal({
   visible
 }: PeoplePickerModalProps) {
   return (
-    <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
+    <Modal animationType="fade" onRequestClose={onClose} transparent visible={visible}>
       <View style={styles.modalOverlay}>
         <KeyboardAvoidingView
           behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? 18 : 0}
-          style={styles.peopleSheet}
+          keyboardVerticalOffset={Platform.OS === "ios" ? 12 : 0}
+          style={styles.modalKeyboard}
         >
-          <View style={styles.friendHeader}>
-            <View>
-              <Text style={styles.friendTitle}>Nuova chat</Text>
-              <Text style={styles.friendSubtitle}>Cerca una persona usando la sua email.</Text>
-            </View>
-            <Pressable accessibilityLabel="Chiudi ricerca persone" accessibilityRole="button" onPress={onClose} style={styles.friendClose}>
-              <Ionicons color={colors.ink} name="close" size={22} />
-            </Pressable>
-          </View>
-
-          <View style={styles.friendSearchBox}>
-            <Ionicons color={colors.muted} name="mail-outline" size={19} />
-            <TextInput
-              autoCapitalize="none"
-              autoComplete="email"
-              keyboardType="email-address"
-              onChangeText={onSearchChange}
-              placeholder="email@dominio.it"
-              placeholderTextColor={colors.muted}
-              style={styles.friendSearchInput}
-              textContentType="emailAddress"
-              value={search}
-            />
-            {search ? (
+          <Pressable
+            accessibilityLabel="Chiudi ricerca persone"
+            accessibilityRole="button"
+            onPress={onClose}
+            style={styles.modalBackdrop}
+          />
+          <View style={styles.peopleSheet}>
+            <View style={styles.friendHeader}>
+              <View style={styles.friendHeaderCopy}>
+                <Text style={styles.friendTitle}>Nuova chat</Text>
+                <Text style={styles.friendSubtitle}>Cerca una persona usando la sua email.</Text>
+              </View>
               <Pressable
-                accessibilityLabel="Cancella ricerca persone"
+                accessibilityLabel="Chiudi ricerca persone"
                 accessibilityRole="button"
-                onPress={() => onSearchChange("")}
+                onPress={onClose}
+                style={styles.friendClose}
               >
-                <Ionicons color={colors.muted} name="close-circle" size={19} />
+                <Ionicons color={colors.ink} name="close" size={22} />
               </Pressable>
-            ) : null}
-          </View>
+            </View>
 
-          {searching ? <Text style={styles.emptyListText}>Cerco utente...</Text> : null}
-          {error ? <Text style={styles.peopleErrorText}>{error}</Text> : null}
-          {!search && !searching ? (
-            <Text style={styles.emptyListText}>Inserisci un'email per trovare la persona con cui parlare.</Text>
-          ) : null}
-          {result ? (
-            <PersonRow
-              actionLabel="Avvia chat"
-              chat={result}
-              icon="chatbubble-ellipses-outline"
-              onPress={() => onStartChat(result)}
-            />
-          ) : null}
+            <ScrollView
+              automaticallyAdjustKeyboardInsets
+              contentContainerStyle={styles.peopleContent}
+              keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
+              keyboardShouldPersistTaps="handled"
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.friendSearchBox}>
+                <Ionicons color={colors.muted} name="mail-outline" size={19} />
+                <TextInput
+                  autoCapitalize="none"
+                  autoComplete="email"
+                  keyboardType="email-address"
+                  onChangeText={onSearchChange}
+                  placeholder="email@dominio.it"
+                  placeholderTextColor={colors.muted}
+                  style={styles.friendSearchInput}
+                  textContentType="emailAddress"
+                  value={search}
+                />
+                {search ? (
+                  <Pressable
+                    accessibilityLabel="Cancella ricerca persone"
+                    accessibilityRole="button"
+                    onPress={() => onSearchChange("")}
+                  >
+                    <Ionicons color={colors.muted} name="close-circle" size={19} />
+                  </Pressable>
+                ) : null}
+              </View>
+
+              {searching ? <Text style={styles.emptyListText}>Cerco utente...</Text> : null}
+              {error ? <Text style={styles.peopleErrorText}>{error}</Text> : null}
+              {!search && !searching ? (
+                <Text style={styles.emptyListText}>Inserisci un'email per trovare la persona con cui parlare.</Text>
+              ) : null}
+              {result ? (
+                <PersonRow
+                  actionLabel="Avvia chat"
+                  chat={result}
+                  icon="chatbubble-ellipses-outline"
+                  onPress={() => onStartChat(result)}
+                />
+              ) : null}
+            </ScrollView>
+          </View>
         </KeyboardAvoidingView>
       </View>
     </Modal>
@@ -1409,8 +1430,20 @@ const styles = StyleSheet.create({
   },
   modalOverlay: {
     backgroundColor: "rgba(17,24,39,0.28)",
+    flex: 1
+  },
+  modalKeyboard: {
+    alignItems: "center",
     flex: 1,
-    justifyContent: "flex-end"
+    justifyContent: "center",
+    padding: spacing.lg
+  },
+  modalBackdrop: {
+    bottom: 0,
+    left: 0,
+    position: "absolute",
+    right: 0,
+    top: 0
   },
   friendSheet: {
     backgroundColor: colors.background,
@@ -1422,18 +1455,26 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.xxl
   },
   peopleSheet: {
-    backgroundColor: colors.background,
-    borderTopLeftRadius: 22,
-    borderTopRightRadius: 22,
-    gap: spacing.md,
-    maxHeight: "82%",
+    alignSelf: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: 20,
+    borderWidth: 1,
+    maxHeight: "86%",
+    maxWidth: 430,
     padding: spacing.lg,
-    paddingBottom: spacing.xxl
+    width: "100%",
+    ...shadow
   },
   friendHeader: {
     alignItems: "center",
     flexDirection: "row",
+    gap: spacing.md,
     justifyContent: "space-between"
+  },
+  friendHeaderCopy: {
+    flex: 1,
+    minWidth: 0
   },
   friendTitle: {
     color: colors.ink,
@@ -1458,7 +1499,7 @@ const styles = StyleSheet.create({
   },
   friendSearchBox: {
     alignItems: "center",
-    backgroundColor: colors.surface,
+    backgroundColor: colors.background,
     borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
@@ -1466,6 +1507,11 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     minHeight: 48,
     paddingHorizontal: spacing.md
+  },
+  peopleContent: {
+    gap: spacing.md,
+    paddingTop: spacing.lg,
+    paddingBottom: spacing.sm
   },
   friendSearchInput: {
     color: colors.ink,

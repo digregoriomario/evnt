@@ -24,12 +24,6 @@ export async function closeExpiredEvents(now = eventCleanupNow()) {
 }
 
 export function startExpiredEventsCleanup() {
-  if (env.eventCleanupTimeOffsetHours !== 0) {
-    console.warn(
-      `Event cleanup time offset active: ${env.eventCleanupTimeOffsetHours} hours. Use only for local testing.`
-    );
-  }
-
   void closeExpiredEvents().catch((error) => {
     console.error("Failed to close expired events", error);
   });

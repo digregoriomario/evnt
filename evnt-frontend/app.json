@@ -9,22 +9,27 @@
       "**/*"
     ],
     "ios": {
+      "bundleIdentifier": "com.evnt.mobile",
       "supportsTablet": true,
       "infoPlist": {
         "NSAppTransportSecurity": {
           "NSAllowsArbitraryLoads": true
         },
         "NSLocalNetworkUsageDescription": "Evnt usa la rete locale per collegarsi al backend durante lo sviluppo.",
-        "NSLocationWhenInUseUsageDescription": "Evnt usa la tua posizione per mostrarti gli eventi vicini sulla mappa."
+        "NSLocationWhenInUseUsageDescription": "Evnt usa la tua posizione per mostrarti gli eventi vicini sulla mappa.",
+        "ITSAppUsesNonExemptEncryption": false
       }
     },
     "android": {
+      "package": "com.evnt.mobile",
       "usesCleartextTraffic": true,
       "softwareKeyboardLayoutMode": "resize",
       "permissions": [
-      "ACCESS_COARSE_LOCATION",
+        "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
-        "POST_NOTIFICATIONS"
+        "POST_NOTIFICATIONS",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ]
     },
     "plugins": [
@@ -41,6 +46,12 @@
     "web": {
       "bundler": "metro",
       "output": "single"
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "1a9f37bc-5b8b-4501-b863-bf69f1ead4e7"
+      }
+    },
+    "owner": "mariodigregorio"
   }
 }

@@ -40,6 +40,11 @@ export function publishToUser(userId: number, event: RealtimeEvent) {
 export function attachRealtime(server: Server) {
   const wss = new WebSocketServer({ path: "/ws", server });
 
+  wss.on("error", () => {
+    // The HTTP server owns startup/shutdown errors. Keeping this handler avoids
+    // ws rethrowing the same listen error with a noisy Node stacktrace.
+  });
+
   wss.on("connection", (socket, request) => {
     try {
       const url = new URL(request.url ?? "", "http://localhost");

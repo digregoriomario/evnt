@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../utils/http";
 import { authRequired } from "../middleware/auth";
-import { cleanupOldNotifications, runScheduledEventNotifications } from "../utils/notifications";
+import { cleanupOldNotifications, notifyTestPush, runScheduledEventNotifications } from "../utils/notifications";
 
 export const notificationsRouter = Router();
 notificationsRouter.use(authRequired);
@@ -57,6 +57,24 @@ notificationsRouter.post(
         userId: req.userId!
       }
     });
+    res.json({ ok: true });
+  })
+);
+
+notificationsRouter.get(
+  "/push-status",
+  asyncHandler(async (req, res) => {
+    const activeTokens = await prisma.pushToken.count({
+      where: { disabled: false, userId: req.userId }
+    });
+    res.json({ activeTokens });
+  })
+);
+
+notificationsRouter.post(
+  "/test-push",
+  asyncHandler(async (req, res) => {
+    await notifyTestPush(req.userId!);
     res.json({ ok: true });
   })
 );
