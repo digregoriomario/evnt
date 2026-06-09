@@ -282,6 +282,8 @@ export const api = {
   // ---- Notifications ----
   notifications: () =>
     apiRequest<{ notifications: Notification[] }>("/notifications").then((r) => r.notifications),
+  deleteNotification: (id: number) => apiRequest<void>(`/notifications/${id}`, { method: "DELETE" }),
+  deleteAllNotifications: () => apiRequest<void>("/notifications", { method: "DELETE" }),
   markRead: (id: number) => apiRequest<void>(`/notifications/${id}/read`, { method: "POST" }),
   markAllRead: () => apiRequest<void>("/notifications/read-all", { method: "POST" }),
   registerPushToken: (payload: PushTokenPayload) =>

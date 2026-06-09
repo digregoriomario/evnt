@@ -5,31 +5,32 @@ import L, {
   type Map as LeafletMap,
   type Marker as LeafletMarker
 } from "leaflet";
-import "leaflet/dist/leaflet.css";
 import { createElement, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import { Modal, Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from "react-native";
 
 import { LocationFallbackBanner } from "../components/LocationFallbackBanner";
-import { MapFiltersModal, MapFiltersSheet, type PriceFilter } from "../components/MapFiltersModal";
+import { MapFiltersModal, MapFiltersSheet } from "../components/MapFiltersModal";
 import { PillButton } from "../components/PillButton";
-import { cityMatches, findCitySuggestion } from "../data/cities";
+import { buildEventFilterResult, eventRadiusOptions } from "../application/events/eventFiltering";
 import { categoryColors, categoryEmojis, categorySoftColors, getEventSubcategoryLabel } from "../data/events";
+import { ensureLeafletStyles } from "../styles/leafletWeb";
 import { colors, radius, shadow, spacing } from "../theme";
-import { Category, Coordinates, EvntEvent, LocationStatus, UserProfile } from "../types";
+import { EventFilterState, Coordinates, EvntEvent, LocationStatus, UserProfile } from "../types";
 
 type MapScreenProps = {
   events: EvntEvent[];
   favorites: Set<string>;
+  filters: EventFilterState;
   locationStatus: LocationStatus;
   registrations: Set<string>;
   user: UserProfile;
   userCoordinates: Coordinates | null;
+  onFiltersChange: (updates: Partial<EventFilterState>) => void;
   onOpenEvent: (event: EvntEvent) => void;
   onRequestLocation: () => Promise<Coordinates | null>;
+  onResetFilters: () => void;
   onToggleFavorite: (eventId: string) => void;
 };
-
-type RadiusOption = 1 | 3 | 5 | 10 | 25;
 
 type Point = {
   x: number;
@@ -66,8 +67,6 @@ type PoiPreviewCardProps = {
   style?: StyleProp<ViewStyle>;
 };
 
-const radiusOptions: RadiusOption[] = [1, 3, 5, 10, 25];
-const defaultCoordinates: Coordinates = { latitude: 40.6815, longitude: 14.761 };
 const leafletContainerStyle: CSSProperties = {
   bottom: 0,
   left: 0,
@@ -95,20 +94,6 @@ function zoomFromRadius(radiusKm: number) {
   if (radiusKm <= 5) return 13;
   if (radiusKm <= 10) return 12;
   return 11;
-}
-
-function distanceBetweenKm(from: Coordinates, to: Coordinates) {
-  const earthRadiusKm = 6371;
-  const toRadians = (degrees: number) => (degrees * Math.PI) / 180;
-  const deltaLatitude = toRadians(to.latitude - from.latitude);
-  const deltaLongitude = toRadians(to.longitude - from.longitude);
-  const fromLatitude = toRadians(from.latitude);
-  const toLatitude = toRadians(to.latitude);
-  const halfChord =
-    Math.sin(deltaLatitude / 2) ** 2 +
-    Math.cos(fromLatitude) * Math.cos(toLatitude) * Math.sin(deltaLongitude / 2) ** 2;
-
-  return earthRadiusKm * 2 * Math.atan2(Math.sqrt(halfChord), Math.sqrt(1 - halfChord));
 }
 
 function createEventIcon(event: EvntEvent, selected: boolean) {
@@ -177,50 +162,39 @@ function cardPosition(point: Point, frameWidth: number, frameHeight: number): Vi
 export function MapScreen({
   events,
   favorites,
+  filters,
   locationStatus,
   registrations,
   user,
   userCoordinates,
+  onFiltersChange,
   onOpenEvent,
   onRequestLocation,
+  onResetFilters,
   onToggleFavorite
 }: MapScreenProps) {
-  const [category, setCategory] = useState<Category | "Tutti">("Tutti");
-  const [price, setPrice] = useState<PriceFilter>("tutti");
-  const [radiusKm, setRadiusKm] = useState<RadiusOption>(10);
   const [selectedEventId, setSelectedEventId] = useState(events[0]?.id);
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [fullscreenOpen, setFullscreenOpen] = useState(false);
 
-  const fallbackCoordinates = useMemo(
-    () => user.cityCoordinates ?? findCitySuggestion(user.city)?.coordinates ?? defaultCoordinates,
-    [user.city, user.cityCoordinates]
-  );
-  const hasDeviceLocation = locationStatus === "granted" && userCoordinates !== null;
-  const usesCityFallback = !hasDeviceLocation;
-  const showLocationFallbackNotice = usesCityFallback && locationStatus !== "loading";
-  const radiusCenter = hasDeviceLocation && userCoordinates ? userCoordinates : fallbackCoordinates;
-
-  const eventDistances = useMemo(() => {
-    return events.reduce<Record<string, number>>((distances, event) => {
-      distances[event.id] = distanceBetweenKm(radiusCenter, event.coordinates);
-      return distances;
-    }, {});
-  }, [events, radiusCenter]);
-
-  const filteredEvents = useMemo(
+  const {
+    activeFilterCount,
+    eventDistances,
+    filteredEvents,
+    hasDeviceLocation,
+    radiusCenter,
+    showLocationFallbackNotice,
+    usesCityFallback
+  } = useMemo(
     () =>
-      events.filter((event) => {
-        const matchesFallbackCity = !usesCityFallback || cityMatches(event.city, user.city);
-        const matchesCategory = category === "Tutti" || event.category === category;
-        const matchesPrice =
-          price === "tutti" ||
-          (price === "gratis" && event.price === 0) ||
-          (price === "pagamento" && event.price > 0);
-        const distanceKm = eventDistances[event.id] ?? event.distanceKm;
-        return matchesFallbackCity && matchesCategory && matchesPrice && distanceKm <= radiusKm;
+      buildEventFilterResult({
+        events,
+        filters,
+        locationStatus,
+        user,
+        userCoordinates
       }),
-    [category, eventDistances, events, price, radiusKm, user.city, usesCityFallback]
+    [events, filters, locationStatus, user, userCoordinates]
   );
 
   const selectedEvent =
@@ -241,9 +215,6 @@ export function MapScreen({
   const updateUserLocation = useCallback(async () => {
     await onRequestLocation();
   }, [onRequestLocation]);
-
-  const activeFilterCount =
-    (category === "Tutti" ? 0 : 1) + (price === "tutti" ? 0 : 1) + (radiusKm === 10 ? 0 : 1);
 
   const locationCopy = {
     denied: {
@@ -268,12 +239,6 @@ export function MapScreen({
     }
   }[locationStatus];
 
-  const clearFilters = () => {
-    setCategory("Tutti");
-    setPrice("tutti");
-    setRadiusKm(10);
-  };
-
   const closeFullscreen = () => {
     setFullscreenOpen(false);
     setFiltersOpen(false);
@@ -286,7 +251,7 @@ export function MapScreen({
           <View style={styles.headerCopy}>
             <Text style={styles.title}>Mappa eventi</Text>
             <Text style={styles.subtitle}>
-              {filteredEvents.length} eventi entro {radiusKm} km
+              {filteredEvents.length} eventi entro {filters.radiusKm} km
               {usesCityFallback ? ` a ${user.city}` : ""}
             </Text>
           </View>
@@ -322,7 +287,7 @@ export function MapScreen({
           onSelectEvent={selectEvent}
           onToggleFavorite={onToggleFavorite}
           radiusCenter={radiusCenter}
-          radiusKm={radiusKm}
+          radiusKm={filters.radiusKm}
           registrations={registrations}
           selectedEvent={selectedEvent}
         />
@@ -368,22 +333,24 @@ export function MapScreen({
             onSelectEvent={selectEvent}
             onToggleFavorite={onToggleFavorite}
             radiusCenter={radiusCenter}
-            radiusKm={radiusKm}
+            radiusKm={filters.radiusKm}
             registrations={registrations}
             selectedEvent={selectedEvent}
           />
           {filtersOpen && (
             <View style={styles.fullscreenFilterOverlay}>
               <MapFiltersSheet
-                category={category}
-                onCategoryChange={setCategory}
+                category={filters.category}
+                onCategoryChange={(category) => onFiltersChange({ category })}
                 onClose={() => setFiltersOpen(false)}
-                onPriceChange={setPrice}
-                onRadiusChange={(value) => setRadiusKm(value as RadiusOption)}
-                onReset={clearFilters}
-                price={price}
-                radiusKm={radiusKm}
-                radiusOptions={radiusOptions}
+                onPriceChange={(price) => onFiltersChange({ price })}
+                onQueryChange={(query) => onFiltersChange({ query })}
+                onRadiusChange={(radiusKm) => onFiltersChange({ radiusKm })}
+                onReset={onResetFilters}
+                price={filters.price}
+                query={filters.query}
+                radiusKm={filters.radiusKm}
+                radiusOptions={[...eventRadiusOptions]}
               />
             </View>
           )}
@@ -391,15 +358,17 @@ export function MapScreen({
       </Modal>
 
       <MapFiltersModal
-        category={category}
-        onCategoryChange={setCategory}
+        category={filters.category}
+        onCategoryChange={(category) => onFiltersChange({ category })}
         onClose={() => setFiltersOpen(false)}
-        onPriceChange={setPrice}
-        onRadiusChange={(value) => setRadiusKm(value as RadiusOption)}
-        onReset={clearFilters}
-        price={price}
-        radiusKm={radiusKm}
-        radiusOptions={radiusOptions}
+        onPriceChange={(price) => onFiltersChange({ price })}
+        onQueryChange={(query) => onFiltersChange({ query })}
+        onRadiusChange={(radiusKm) => onFiltersChange({ radiusKm })}
+        onReset={onResetFilters}
+        price={filters.price}
+        query={filters.query}
+        radiusKm={filters.radiusKm}
+        radiusOptions={[...eventRadiusOptions]}
         visible={!fullscreenOpen && filtersOpen}
       />
     </>
@@ -457,6 +426,7 @@ function WebLeafletMap({
       return;
     }
 
+    ensureLeafletStyles();
     const map = L.map(mapElementRef.current, {
       attributionControl: true,
       scrollWheelZoom: true,

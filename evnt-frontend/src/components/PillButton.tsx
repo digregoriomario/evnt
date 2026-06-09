@@ -1,6 +1,6 @@
 import { Pressable, StyleProp, StyleSheet, Text, TextStyle, ViewStyle } from "react-native";
 
-import { colors, shadow, spacing } from "../theme";
+import { colors, hitSlop, spacing } from "../theme";
 
 type PillButtonProps = {
   accent?: string;
@@ -31,6 +31,7 @@ export function PillButton({
       accessibilityRole={onPress ? "button" : undefined}
       accessibilityState={onPress ? { selected } : undefined}
       disabled={!onPress}
+      hitSlop={onPress ? hitSlop : undefined}
       onPress={onPress}
       style={({ pressed }) => [
         styles.pill,
@@ -54,26 +55,25 @@ const styles = StyleSheet.create({
     opacity: 1
   },
   emoji: {
-    fontSize: 16,
-    lineHeight: 18
+    fontSize: 15,
+    lineHeight: 17
   },
   label: {
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "900",
-    lineHeight: 18
+    lineHeight: 17
   },
   pill: {
     alignItems: "center",
-    borderRadius: 22,
+    borderRadius: 19,
     borderWidth: 1,
     flexDirection: "row",
     gap: 6,
     justifyContent: "center",
-    minHeight: 42,
-    minWidth: 88,
+    minHeight: 38,
+    minWidth: 82,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    ...shadow
+    paddingVertical: spacing.sm
   },
   pressed: {
     opacity: 0.86

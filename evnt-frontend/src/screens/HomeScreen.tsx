@@ -1,7 +1,6 @@
 import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useMemo, useState } from "react";
 import {
-  Modal,
   Platform,
   Pressable,
   RefreshControl,
@@ -12,17 +11,15 @@ import {
   View
 } from "react-native";
 
-import { CategoryChip } from "../components/CategoryChip";
 import { EmptyState } from "../components/EmptyState";
 import { EventCard } from "../components/EventCard";
 import { LocationFallbackBanner } from "../components/LocationFallbackBanner";
+import { MapFiltersModal } from "../components/MapFiltersModal";
 import { NotificationsModal } from "../components/NotificationsModal";
-import { PillButton } from "../components/PillButton";
 import { type Notification } from "../api";
-import { cityMatches } from "../data/cities";
-import { categories } from "../data/events";
+import { buildEventFilterResult, eventRadiusOptions } from "../application/events/eventFiltering";
 import { colors, radius, spacing } from "../theme";
-import { Category, Coordinates, EvntEvent, LocationStatus, UserProfile } from "../types";
+import { Coordinates, EventFilterState, EvntEvent, LocationStatus, UserProfile } from "../types";
 
 type HomeScreenProps = {
   events: EvntEvent[];
@@ -31,16 +28,19 @@ type HomeScreenProps = {
   notifications: Notification[];
   registrations: Set<string>;
   user: UserProfile;
+  filters: EventFilterState;
+  onDeleteAllNotifications: () => void;
+  onDeleteNotification: (notificationId: number) => void;
+  onFiltersChange: (updates: Partial<EventFilterState>) => void;
   onMarkAllNotificationsRead: () => void;
   onOpenEvent: (event: EvntEvent) => void;
   onOpenNotification: (notification: Notification) => void;
   onRefresh: () => Promise<void>;
   onRequestLocation: () => Promise<Coordinates | null>;
+  onResetFilters: () => void;
   onToggleFavorite: (eventId: string) => void;
   userCoordinates: Coordinates | null;
 };
-
-type PriceFilter = "tutti" | "gratis" | "pagamento";
 
 export function HomeScreen({
   events,
@@ -49,52 +49,36 @@ export function HomeScreen({
   notifications,
   registrations,
   user,
+  filters,
+  onDeleteAllNotifications,
+  onDeleteNotification,
+  onFiltersChange,
   onMarkAllNotificationsRead,
   onOpenEvent,
   onOpenNotification,
   onRefresh,
   onRequestLocation,
+  onResetFilters,
   onToggleFavorite,
   userCoordinates
 }: HomeScreenProps) {
-  const [selectedCategory, setSelectedCategory] = useState<Category | "Tutti">("Tutti");
-  const [query, setQuery] = useState("");
-  const [price, setPrice] = useState<PriceFilter>("tutti");
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
   const usesCityFallback = locationStatus !== "granted" || userCoordinates === null;
-  const showLocationFallbackNotice = usesCityFallback && locationStatus !== "loading";
   const unreadNotifications = notifications.filter((notification) => !notification.isRead).length;
-
-  const filteredEvents = useMemo(() => {
-    const normalized = query.trim().toLowerCase();
-    return events
-      .filter((event) => {
-        const matchesFallbackCity = !usesCityFallback || cityMatches(event.city, user.city);
-        const matchesCategory = selectedCategory === "Tutti" || event.category === selectedCategory;
-        const matchesQuery =
-          normalized.length === 0 ||
-          event.title.toLowerCase().includes(normalized) ||
-          event.place.toLowerCase().includes(normalized) ||
-          event.city.toLowerCase().includes(normalized);
-        const matchesPrice =
-          price === "tutti" ||
-          (price === "gratis" && event.price === 0) ||
-          (price === "pagamento" && event.price > 0);
-        return matchesFallbackCity && matchesCategory && matchesQuery && matchesPrice;
-      })
-      .sort((a, b) => b.affinity - a.affinity || a.distanceKm - b.distanceKm);
-  }, [events, price, query, selectedCategory, user.city, usesCityFallback]);
-
-  const activeFilterCount =
-    (selectedCategory === "Tutti" ? 0 : 1) + (price === "tutti" ? 0 : 1) + (query.trim() ? 1 : 0);
-
-  const clearFilters = () => {
-    setSelectedCategory("Tutti");
-    setPrice("tutti");
-    setQuery("");
-  };
+  const { activeFilterCount, filteredEvents, showLocationFallbackNotice } = useMemo(
+    () =>
+      buildEventFilterResult({
+        events,
+        filters,
+        locationStatus,
+        sort: "feed",
+        user,
+        userCoordinates
+      }),
+    [events, filters, locationStatus, user, userCoordinates]
+  );
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -149,14 +133,18 @@ export function HomeScreen({
             <TextInput
               accessibilityLabel="Cerca eventi"
               autoCapitalize="none"
-              onChangeText={setQuery}
+              onChangeText={(query) => onFiltersChange({ query })}
               placeholder="Cerca eventi"
               placeholderTextColor={colors.muted}
               style={styles.searchInput}
-              value={query}
+              value={filters.query}
             />
-            {query.length > 0 && (
-              <Pressable accessibilityLabel="Cancella ricerca" accessibilityRole="button" onPress={() => setQuery("")}>
+            {filters.query.length > 0 && (
+              <Pressable
+                accessibilityLabel="Cancella ricerca"
+                accessibilityRole="button"
+                onPress={() => onFiltersChange({ query: "" })}
+              >
                 <Ionicons color={colors.muted} name="close-circle" size={20} />
               </Pressable>
             )}
@@ -185,7 +173,7 @@ export function HomeScreen({
             </Text>
           </View>
           {activeFilterCount > 0 && (
-            <Pressable accessibilityRole="button" onPress={clearFilters} style={styles.clearButton}>
+            <Pressable accessibilityRole="button" onPress={onResetFilters} style={styles.clearButton}>
               <Text style={styles.clearText}>Reset</Text>
             </Pressable>
           )}
@@ -215,68 +203,26 @@ export function HomeScreen({
         )}
       </ScrollView>
 
-      <Modal animationType="slide" onRequestClose={() => setFiltersOpen(false)} transparent visible={filtersOpen}>
-        <View style={styles.modalOverlay}>
-          <View style={styles.filterSheet}>
-            <View style={styles.sheetHeader}>
-            <Text style={styles.sheetTitle}>Filtri</Text>
-              <Pressable
-                accessibilityLabel="Chiudi filtri"
-                accessibilityRole="button"
-                onPress={() => setFiltersOpen(false)}
-                style={styles.closeButton}
-              >
-                <Ionicons color={colors.ink} name="close" size={22} />
-              </Pressable>
-            </View>
-
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Categoria</Text>
-              <View style={styles.optionGrid}>
-                <FilterOption
-                  label="Tutte"
-                  selected={selectedCategory === "Tutti"}
-                  onPress={() => setSelectedCategory("Tutti")}
-                />
-                {categories.map((category) => (
-                  <CategoryChip
-                    category={category}
-                    key={category}
-                    onPress={() => setSelectedCategory(category)}
-                    selected={selectedCategory === category}
-                  />
-                ))}
-              </View>
-            </View>
-
-            <View style={styles.filterSection}>
-              <Text style={styles.filterLabel}>Prezzo</Text>
-              <View style={styles.optionGrid}>
-                <FilterOption label="Tutti" selected={price === "tutti"} onPress={() => setPrice("tutti")} />
-                <FilterOption label="Gratis" selected={price === "gratis"} onPress={() => setPrice("gratis")} />
-                <FilterOption
-                  label="A pagamento"
-                  selected={price === "pagamento"}
-                  onPress={() => setPrice("pagamento")}
-                />
-              </View>
-            </View>
-
-            <View style={styles.sheetActions}>
-              <Pressable accessibilityRole="button" onPress={clearFilters} style={styles.secondaryAction}>
-                <Text style={styles.secondaryActionText}>Cancella</Text>
-              </Pressable>
-              <Pressable accessibilityRole="button" onPress={() => setFiltersOpen(false)} style={styles.primaryAction}>
-                <Text style={styles.primaryActionText}>Mostra eventi</Text>
-              </Pressable>
-            </View>
-          </View>
-        </View>
-      </Modal>
+      <MapFiltersModal
+        category={filters.category}
+        onCategoryChange={(category) => onFiltersChange({ category })}
+        onClose={() => setFiltersOpen(false)}
+        onPriceChange={(price) => onFiltersChange({ price })}
+        onQueryChange={(query) => onFiltersChange({ query })}
+        onRadiusChange={(radiusKm) => onFiltersChange({ radiusKm })}
+        onReset={onResetFilters}
+        price={filters.price}
+        query={filters.query}
+        radiusKm={filters.radiusKm}
+        radiusOptions={[...eventRadiusOptions]}
+        visible={filtersOpen}
+      />
 
       <NotificationsModal
         notifications={notifications}
         onClose={() => setNotificationsOpen(false)}
+        onDeleteAll={onDeleteAllNotifications}
+        onDeleteNotification={onDeleteNotification}
         onMarkAllRead={onMarkAllNotificationsRead}
         onPressNotification={(notification) => {
           setNotificationsOpen(false);
@@ -285,25 +231,6 @@ export function HomeScreen({
         visible={notificationsOpen}
       />
     </>
-  );
-}
-
-type FilterOptionProps = {
-  label: string;
-  onPress: () => void;
-  selected: boolean;
-};
-
-function FilterOption({ label, onPress, selected }: FilterOptionProps) {
-  return (
-    <PillButton
-      accessibilityLabel={`Filtro ${label}`}
-      accent={selected ? "#5A4BC4" : colors.ink}
-      label={label}
-      onPress={onPress}
-      selected={selected}
-      soft={selected ? "#F0EEFF" : colors.surfaceMuted}
-    />
   );
 }
 

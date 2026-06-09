@@ -14,6 +14,8 @@ const pushTokenSchema = z.object({
   token: z.string().trim().min(10).max(255)
 });
 
+const notificationIdSchema = z.coerce.number().int().positive();
+
 notificationsRouter.get(
   "/",
   asyncHandler(async (req, res) => {
@@ -91,10 +93,31 @@ notificationsRouter.delete(
   })
 );
 
+notificationsRouter.delete(
+  "/",
+  asyncHandler(async (req, res) => {
+    await prisma.notification.deleteMany({
+      where: { userId: req.userId }
+    });
+    res.json({ ok: true });
+  })
+);
+
+notificationsRouter.delete(
+  "/:id",
+  asyncHandler(async (req, res) => {
+    const id = notificationIdSchema.parse(req.params.id);
+    await prisma.notification.deleteMany({
+      where: { id, userId: req.userId }
+    });
+    res.json({ ok: true });
+  })
+);
+
 notificationsRouter.post(
   "/:id/read",
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = notificationIdSchema.parse(req.params.id);
     await prisma.notification.updateMany({
       where: { id, userId: req.userId },
       data: { isRead: true }

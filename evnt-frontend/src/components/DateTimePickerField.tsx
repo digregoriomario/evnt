@@ -78,17 +78,17 @@ const styles = StyleSheet.create({
   wrap: {
     alignItems: "center",
     backgroundColor: colors.surface,
-    borderColor: "#D8D3CC",
+    borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: "row",
-    minHeight: 64,
+    minHeight: 56,
     paddingHorizontal: spacing.md,
     position: "relative"
   },
   placeholder: {
     color: colors.muted,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "700",
     left: spacing.md,
     pointerEvents: "none",
@@ -96,7 +96,7 @@ const styles = StyleSheet.create({
   },
   displayValue: {
     color: colors.ink,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "800",
     left: spacing.md,
     pointerEvents: "none",

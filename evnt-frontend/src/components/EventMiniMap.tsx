@@ -1,9 +1,9 @@
 import L, { type Map as LeafletMap, type Marker as LeafletMarker } from "leaflet";
-import "leaflet/dist/leaflet.css";
 import { createElement, useEffect, useRef, type CSSProperties } from "react";
 import { StyleSheet, View } from "react-native";
 
 import { categoryColors, categoryEmojis, categorySoftColors } from "../data/events";
+import { ensureLeafletStyles } from "../styles/leafletWeb";
 import { radius } from "../theme";
 import { EvntEvent } from "../types";
 
@@ -58,6 +58,7 @@ export function EventMiniMap({ event }: EventMiniMapProps) {
       return;
     }
 
+    ensureLeafletStyles();
     const map = L.map(mapElementRef.current, {
       attributionControl: false,
       dragging: false,

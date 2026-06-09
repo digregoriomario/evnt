@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   Image,
   KeyboardAvoidingView,
@@ -14,7 +14,10 @@ import {
 
 import { CategoryChip } from "../components/CategoryChip";
 import { EventCard } from "../components/EventCard";
+import { FormField } from "../components/FormField";
 import { ProfileImagePicker } from "../components/ProfileImagePicker";
+import { searchCitiesWorldwide } from "../api/geocoding";
+import { citySuggestions, type CitySuggestion } from "../data/cities";
 import { categories } from "../data/events";
 import { colors, radius, shadow, spacing } from "../theme";
 import { Category, EvntEvent, UserProfile } from "../types";
@@ -32,6 +35,17 @@ type ProfileScreenProps = {
 
 type ProfileEventSectionKey = "created" | "favorites" | "registered";
 
+function citySuggestionKey(suggestion: CitySuggestion, index: number) {
+  const { latitude, longitude } = suggestion.coordinates;
+  return [
+    suggestion.name,
+    suggestion.province,
+    latitude.toFixed(5),
+    longitude.toFixed(5),
+    index
+  ].join("-");
+}
+
 export function ProfileScreen({
   events,
   favorites,
@@ -44,6 +58,9 @@ export function ProfileScreen({
 }: ProfileScreenProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState(user);
+  const [citySuggestionsOpen, setCitySuggestionsOpen] = useState(false);
+  const [remoteCitySuggestions, setRemoteCitySuggestions] = useState<CitySuggestion[]>([]);
+  const [citySearching, setCitySearching] = useState(false);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<ProfileEventSectionKey, boolean>>({
@@ -58,16 +75,95 @@ export function ProfileScreen({
   );
   const birthDateLabel = formatDate(user.birthDate);
 
+  useEffect(() => {
+    const normalized = draft.city.trim();
+    if (!editing || !citySuggestionsOpen || normalized.length < 2) {
+      setRemoteCitySuggestions([]);
+      setCitySearching(false);
+      return;
+    }
+
+    let cancelled = false;
+    setCitySearching(true);
+    const timeout = setTimeout(() => {
+      searchCitiesWorldwide(normalized)
+        .then((suggestions) => {
+          if (!cancelled) {
+            setRemoteCitySuggestions(suggestions);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setRemoteCitySuggestions([]);
+          }
+        })
+        .finally(() => {
+          if (!cancelled) {
+            setCitySearching(false);
+          }
+        });
+    }, 350);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timeout);
+    };
+  }, [citySuggestionsOpen, draft.city, editing]);
+
+  const filteredCitySuggestions = useMemo(() => {
+    const normalized = draft.city.trim().toLowerCase();
+    if (normalized.length === 0) {
+      return citySuggestions.slice(0, 5);
+    }
+
+    const localSuggestions = citySuggestions.filter((suggestion) =>
+      `${suggestion.name} ${suggestion.province}`.toLowerCase().includes(normalized)
+    );
+
+    return [...remoteCitySuggestions, ...localSuggestions]
+      .filter(
+        (suggestion, index, all) =>
+          all.findIndex(
+            (item) =>
+              item.name.toLowerCase() === suggestion.name.toLowerCase() &&
+              item.province.toLowerCase() === suggestion.province.toLowerCase()
+          ) === index
+      )
+      .slice(0, 6);
+  }, [draft.city, remoteCitySuggestions]);
+
   const openEdit = () => {
     setDraft(user);
+    setCitySuggestionsOpen(false);
+    setRemoteCitySuggestions([]);
+    setCitySearching(false);
     setFormError("");
     setEditing(true);
   };
 
   const cancelEdit = () => {
     setDraft(user);
+    setCitySuggestionsOpen(false);
+    setRemoteCitySuggestions([]);
+    setCitySearching(false);
     setFormError("");
     setEditing(false);
+  };
+
+  const handleCityChange = (city: string) => {
+    setDraft((current) => ({ ...current, city, cityCoordinates: undefined }));
+    setCitySuggestionsOpen(true);
+    setFormError("");
+  };
+
+  const chooseCity = (suggestion: CitySuggestion) => {
+    setDraft((current) => ({
+      ...current,
+      city: suggestion.name,
+      cityCoordinates: suggestion.coordinates
+    }));
+    setCitySuggestionsOpen(false);
+    setFormError("");
   };
 
   const toggleInterest = (interest: Category) => {
@@ -146,10 +242,12 @@ export function ProfileScreen({
           {formError ? <Text style={styles.formErrorText}>{formError}</Text> : null}
 
           <View style={styles.editPanel}>
-            <ProfileImagePicker
-              onChange={(avatar) => setDraft((current) => ({ ...current, avatar }))}
-              value={draft.avatar}
-            />
+            <FormField label="Immagine profilo">
+              <ProfileImagePicker
+                onChange={(avatar) => setDraft((current) => ({ ...current, avatar }))}
+                value={draft.avatar}
+              />
+            </FormField>
 
             <Field label="Nome *">
               <TextInput
@@ -165,17 +263,58 @@ export function ProfileScreen({
             </Field>
 
             <Field label="Citta *">
-              <TextInput
-                autoCapitalize="words"
-                onChangeText={(city) => {
-                  setDraft((current) => ({ ...current, city }));
-                  setFormError("");
-                }}
-                placeholder="La tua citta"
-                placeholderTextColor={colors.muted}
-                style={styles.input}
-                value={draft.city}
-              />
+              <View style={styles.autocompleteWrap}>
+                <View style={styles.cityInputWrap}>
+                  <TextInput
+                    autoCapitalize="words"
+                    autoCorrect={false}
+                    onBlur={() => setTimeout(() => setCitySuggestionsOpen(false), 120)}
+                    onChangeText={handleCityChange}
+                    onFocus={() => setCitySuggestionsOpen(true)}
+                    placeholder="La tua citta"
+                    placeholderTextColor={colors.muted}
+                    style={styles.cityInput}
+                    value={draft.city}
+                  />
+                  <Ionicons color={draft.cityCoordinates ? colors.green : colors.muted} name="search-outline" size={19} />
+                </View>
+
+                {citySuggestionsOpen && filteredCitySuggestions.length > 0 && (
+                  <View style={styles.suggestionList}>
+                    {filteredCitySuggestions.map((suggestion, index) => (
+                      <Pressable
+                        accessibilityLabel={`Seleziona citta ${suggestion.name}, ${suggestion.province}`}
+                        accessibilityRole="button"
+                        key={citySuggestionKey(suggestion, index)}
+                        onPress={() => chooseCity(suggestion)}
+                        style={styles.suggestionRow}
+                      >
+                        <View style={styles.suggestionIcon}>
+                          <Ionicons color={colors.ink} name="business-outline" size={17} />
+                        </View>
+                        <View style={styles.suggestionCopy}>
+                          <Text style={styles.suggestionTitle}>{suggestion.name}</Text>
+                          <Text style={styles.suggestionMeta}>{suggestion.province}</Text>
+                        </View>
+                      </Pressable>
+                    ))}
+                  </View>
+                )}
+
+                {citySuggestionsOpen && citySearching && filteredCitySuggestions.length === 0 && (
+                  <View style={styles.suggestionList}>
+                    <View style={styles.suggestionRow}>
+                      <View style={styles.suggestionIcon}>
+                        <Ionicons color={colors.ink} name="globe-outline" size={17} />
+                      </View>
+                      <View style={styles.suggestionCopy}>
+                        <Text style={styles.suggestionTitle}>Cerco in tutto il mondo...</Text>
+                        <Text style={styles.suggestionMeta}>OpenStreetMap</Text>
+                      </View>
+                    </View>
+                  </View>
+                )}
+              </View>
             </Field>
 
             <Field label="Bio">
@@ -189,8 +328,7 @@ export function ProfileScreen({
               />
             </Field>
 
-            <View style={styles.fieldGroup}>
-              <Text style={styles.fieldLabel}>Interessi *</Text>
+            <FormField label="Interessi *">
               <View style={styles.chips}>
                 {categories.map((category) => (
                   <CategoryChip
@@ -201,7 +339,7 @@ export function ProfileScreen({
                   />
                 ))}
               </View>
-            </View>
+            </FormField>
           </View>
 
           <View style={styles.editActions}>
@@ -378,10 +516,9 @@ type FieldProps = {
 
 function Field({ children, label }: FieldProps) {
   return (
-    <View style={styles.fieldGroup}>
-      <Text style={styles.fieldLabel}>{label}</Text>
+    <FormField label={label}>
       {children}
-    </View>
+    </FormField>
   );
 }
 
@@ -498,13 +635,64 @@ const styles = StyleSheet.create({
     padding: spacing.lg,
     ...shadow
   },
-  fieldGroup: {
+  autocompleteWrap: {
     gap: spacing.sm
   },
-  fieldLabel: {
+  cityInput: {
+    color: colors.ink,
+    flex: 1,
+    fontSize: 16,
+    minHeight: 50
+  },
+  cityInputWrap: {
+    alignItems: "center",
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 56,
+    paddingHorizontal: spacing.md
+  },
+  suggestionList: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    overflow: "hidden"
+  },
+  suggestionRow: {
+    alignItems: "center",
+    borderBottomColor: colors.line,
+    borderBottomWidth: 1,
+    flexDirection: "row",
+    gap: spacing.md,
+    minHeight: 62,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  suggestionIcon: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 19,
+    height: 38,
+    justifyContent: "center",
+    width: 38
+  },
+  suggestionCopy: {
+    flex: 1
+  },
+  suggestionTitle: {
     color: colors.ink,
     fontSize: 15,
     fontWeight: "900"
+  },
+  suggestionMeta: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "700",
+    marginTop: 2
   },
   input: {
     backgroundColor: colors.surface,

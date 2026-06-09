@@ -14,7 +14,9 @@ import {
 
 import { distanceBetweenKm, searchPlacesWorldwide } from "../api/geocoding";
 import { DateTimePickerField } from "../components/DateTimePickerField";
+import { FormField } from "../components/FormField";
 import { PillButton } from "../components/PillButton";
+import { PlacePickerMap } from "../components/PlacePickerMap";
 import { findCitySuggestion } from "../data/cities";
 import {
   categoryColors,
@@ -25,7 +27,7 @@ import {
 } from "../data/events";
 import { placeSuggestions, type PlaceSuggestion } from "../data/places";
 import { colors, radius, shadow, spacing } from "../theme";
-import { Category, ChatMode, EvntEvent, UserProfile } from "../types";
+import { Category, ChatMode, Coordinates, EvntEvent, UserProfile } from "../types";
 
 type CreateEventScreenProps = {
   initialEvent?: EvntEvent;
@@ -36,7 +38,6 @@ type CreateEventScreenProps = {
 };
 
 type CreateField =
-  | "address"
   | "capacity"
   | "date"
   | "description"
@@ -167,6 +168,8 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
   const [place, setPlace] = useState(initialEvent?.place ?? "");
   const [address, setAddress] = useState(initialEvent?.address ?? "");
   const [selectedPlace, setSelectedPlace] = useState<PlaceSuggestion | null>(null);
+  const [manualCoordinates, setManualCoordinates] = useState<Coordinates | null>(initialEvent?.coordinates ?? null);
+  const [placeMapOpen, setPlaceMapOpen] = useState(false);
   const [placeSuggestionsOpen, setPlaceSuggestionsOpen] = useState(false);
   const [remotePlaceSuggestions, setRemotePlaceSuggestions] = useState<PlaceSuggestion[]>([]);
   const [placeSearching, setPlaceSearching] = useState(false);
@@ -201,6 +204,8 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
   const eventDateTime = useMemo(() => localEventDateTime(date, time), [date, time]);
   const eventIsInPast = eventDateTime ? eventDateTime.getTime() < Date.now() : true;
   const originCoordinates = user.cityCoordinates ?? findCitySuggestion(user.city)?.coordinates;
+  const placeCoordinates = selectedPlace?.coordinates ?? manualCoordinates ?? initialEvent?.coordinates ?? originCoordinates;
+  const addressInputValue = address || place;
 
   useEffect(() => {
     const type = eventTypeForCategory(initialEvent?.category);
@@ -218,6 +223,8 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     setPlace(initialEvent?.place ?? "");
     setAddress(initialEvent?.address ?? "");
     setSelectedPlace(null);
+    setManualCoordinates(initialEvent?.coordinates ?? null);
+    setPlaceMapOpen(false);
     setPlaceSuggestionsOpen(false);
     setRemotePlaceSuggestions([]);
     setPlaceSearching(false);
@@ -242,7 +249,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
   }, [selectedSubcategories, selectedSubcategory]);
 
   useEffect(() => {
-    const normalized = place.trim();
+    const normalized = addressInputValue.trim();
     if (!placeSuggestionsOpen || normalized.length < 2) {
       setRemotePlaceSuggestions([]);
       setPlaceSearching(false);
@@ -274,10 +281,10 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
       cancelled = true;
       clearTimeout(timeout);
     };
-  }, [originCoordinates, place, placeSuggestionsOpen]);
+  }, [addressInputValue, originCoordinates, placeSuggestionsOpen]);
 
   const filteredPlaceSuggestions = useMemo(() => {
-    const normalized = place.trim().toLowerCase();
+    const normalized = addressInputValue.trim().toLowerCase();
     if (normalized.length < 2) {
       return [];
     }
@@ -304,7 +311,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
           ) === index
       )
       .slice(0, 6);
-  }, [originCoordinates, place, remotePlaceSuggestions]);
+  }, [addressInputValue, originCoordinates, remotePlaceSuggestions]);
 
   const clearFieldError = (field: CreateField) => {
     setFieldErrors((current) => {
@@ -341,11 +348,11 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     if (targetStep === 1) {
       const normalizedCapacity = capacity.trim();
       const normalizedPrice = price.trim();
-      if (place.trim().length < 2) {
-        errors.place = "Inserisci il luogo dell'evento.";
-      }
-      if (address.length > maxAddressLength) {
-        errors.address = `L'indirizzo puo contenere al massimo ${maxAddressLength} caratteri.`;
+      const normalizedAddress = addressInputValue.trim();
+      if (normalizedAddress.length < 2) {
+        errors.place = "Inserisci l'indirizzo dell'evento.";
+      } else if (normalizedAddress.length > maxAddressLength) {
+        errors.place = `L'indirizzo puo contenere al massimo ${maxAddressLength} caratteri.`;
       }
       if (!date) {
         errors.date = "Seleziona una data.";
@@ -403,6 +410,8 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     setPlace("");
     setAddress("");
     setSelectedPlace(null);
+    setManualCoordinates(null);
+    setPlaceMapOpen(false);
     setPlaceSuggestionsOpen(false);
     setDate(nextDefault.date);
     setTime(nextDefault.time);
@@ -423,20 +432,35 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     setPublishing(true);
     const dateTime = eventDateTime ?? new Date();
     const subcategory = effectiveSubcategory;
+    const normalizedAddress = addressInputValue.trim();
     const canReuseInitialPlace =
-      Boolean(initialEvent?.coordinates) && place.trim().toLowerCase() === initialEvent?.place.trim().toLowerCase();
-    let resolvedPlace = selectedPlace;
+      Boolean(initialEvent?.coordinates) &&
+      [initialEvent?.place, initialEvent?.address]
+        .filter(Boolean)
+        .some((value) => normalizedAddress.toLowerCase() === value?.trim().toLowerCase());
+    let resolvedPlace =
+      selectedPlace ??
+      (manualCoordinates
+        ? {
+            address: normalizedAddress || `Coordinate ${manualCoordinates.latitude.toFixed(5)}, ${manualCoordinates.longitude.toFixed(5)}`,
+            city: user.city,
+            coordinates: manualCoordinates,
+            distanceKm: originCoordinates ? distanceBetweenKm(originCoordinates, manualCoordinates) : 0,
+            name: place.trim() || normalizedAddress || "Luogo selezionato sulla mappa"
+          }
+        : null);
 
     if (!resolvedPlace && !canReuseInitialPlace) {
       const [fallbackPlace] =
         filteredPlaceSuggestions.length > 0
           ? filteredPlaceSuggestions
-          : await searchPlacesWorldwide(place.trim(), originCoordinates).catch(() => []);
+          : await searchPlacesWorldwide(normalizedAddress, originCoordinates).catch(() => []);
       resolvedPlace = fallbackPlace ?? null;
 
       if (resolvedPlace) {
         setSelectedPlace(resolvedPlace);
         setAddress((current) => current.trim() || resolvedPlace?.address || "");
+        setPlace((current) => current.trim() || resolvedPlace?.name || "");
         setPlaceSuggestionsOpen(false);
       }
     }
@@ -450,15 +474,19 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     }
 
     const eventCity = resolvedPlace?.city ?? (canReuseInitialPlace ? initialEvent?.city : undefined) ?? user.city;
+    const eventPlace =
+      (resolvedPlace?.name ?? (canReuseInitialPlace ? initialEvent?.place : undefined) ?? place.trim()) ||
+      normalizedAddress;
+    const eventAddress = normalizedAddress || resolvedPlace?.address || initialEvent?.address || eventPlace;
     const event: EvntEvent = {
       id: initialEvent?.id ?? `created-${Date.now()}`,
       title: title.trim(),
       category: selectedType.category,
       date: formatEventDateLabel(date),
       time: time.trim(),
-      place: place.trim(),
+      place: eventPlace,
       city: eventCity,
-      address: address.trim() || resolvedPlace?.address || initialEvent?.address || place.trim(),
+      address: eventAddress,
       price: isFree ? 0 : parsedPrice,
       distanceKm: resolvedPlace?.distanceKm ?? initialEvent?.distanceKm ?? 0,
       affinity: initialEvent?.affinity ?? 0,
@@ -533,6 +561,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
 
   const handlePlaceChange = (value: string) => {
     setPlace(value);
+    setAddress(value);
     clearFieldError("place");
     setSelectedPlace(null);
     setPlaceSuggestionsOpen(value.trim().length > 1);
@@ -542,9 +571,28 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     setPlace(suggestion.name);
     setAddress(suggestion.address);
     setSelectedPlace(suggestion);
+    setManualCoordinates(suggestion.coordinates);
     clearFieldError("place");
-    clearFieldError("address");
     setPlaceSuggestionsOpen(false);
+  };
+
+  const chooseMapCoordinates = (coordinates: Coordinates) => {
+    const fallbackName = place.trim() || address.trim() || "Luogo selezionato sulla mappa";
+    const fallbackAddress =
+      address.trim() || place.trim() || `Coordinate ${coordinates.latitude.toFixed(5)}, ${coordinates.longitude.toFixed(5)}`;
+    const manualPlace: PlaceSuggestion = {
+      address: fallbackAddress,
+      city: user.city,
+      coordinates,
+      distanceKm: originCoordinates ? distanceBetweenKm(originCoordinates, coordinates) : 0,
+      name: fallbackName
+    };
+
+    setManualCoordinates(coordinates);
+    setSelectedPlace(manualPlace);
+    setPlace(fallbackName);
+    setAddress(fallbackAddress);
+    clearFieldError("place");
   };
 
   const chooseSubcategory = (value: string) => {
@@ -592,44 +640,46 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
 
         {step === 0 && (
           <View style={styles.panel}>
-            <Text style={styles.sectionLabel}>TIPO DI EVENTO</Text>
-            <View style={styles.typeGrid}>
-              {eventTypes.map((item) => {
-                const selected = selectedType.label === item.label;
-                const accent = categoryColors[item.category];
-                const soft = categorySoftColors[item.category];
-                return (
-                  <PillButton
-                    accent={accent}
-                    accessibilityLabel={`Seleziona tipo evento ${item.label}`}
-                    emoji={item.emoji}
-                    key={item.label}
-                    label={item.label}
-                    onPress={() => {
-                      setSelectedType(item);
-                      setSelectedSubcategory(eventSubcategories[item.category][0]);
-                      setCustomSubcategory("");
-                    }}
-                    selected={selected}
-                    soft={soft}
-                  />
-                );
-              })}
-            </View>
+            <FormField label="Tipo di evento">
+              <View style={styles.typeGrid}>
+                {eventTypes.map((item) => {
+                  const selected = selectedType.label === item.label;
+                  const accent = categoryColors[item.category];
+                  const soft = categorySoftColors[item.category];
+                  return (
+                    <PillButton
+                      accent={accent}
+                      accessibilityLabel={`Seleziona tipo evento ${item.label}`}
+                      emoji={item.emoji}
+                      key={item.label}
+                      label={item.label}
+                      onPress={() => {
+                        setSelectedType(item);
+                        setSelectedSubcategory(eventSubcategories[item.category][0]);
+                        setCustomSubcategory("");
+                      }}
+                      selected={selected}
+                      soft={soft}
+                    />
+                  );
+                })}
+              </View>
+            </FormField>
 
-            <Text style={styles.sectionLabel}>SOTTOCATEGORIA</Text>
-            <Pressable
-              accessibilityLabel="Seleziona sottocategoria"
-              accessibilityRole="button"
-              onPress={() => setSubcategorySelectOpen(true)}
-              style={[styles.selectButton, fieldErrors.subcategory && styles.inputError]}
+            <FormField
+              error={fieldErrors.subcategory && !selectedSubcategoryIsCustom ? fieldErrors.subcategory : undefined}
+              label="Sottocategoria"
             >
-              <Text style={styles.selectText}>{subcategoryDisplay}</Text>
-              <Ionicons color={colors.muted} name="chevron-down" size={20} />
-            </Pressable>
-            {fieldErrors.subcategory && !selectedSubcategoryIsCustom ? (
-              <Text style={styles.fieldErrorText}>{fieldErrors.subcategory}</Text>
-            ) : null}
+              <Pressable
+                accessibilityLabel="Seleziona sottocategoria"
+                accessibilityRole="button"
+                onPress={() => setSubcategorySelectOpen(true)}
+                style={[styles.selectButton, fieldErrors.subcategory && styles.inputError]}
+              >
+                <Text style={styles.selectText}>{subcategoryDisplay}</Text>
+                <Ionicons color={colors.muted} name="chevron-down" size={20} />
+              </Pressable>
+            </FormField>
 
             {selectedSubcategoryIsCustom && (
               <Field error={fieldErrors.subcategory} label="Sottocategoria personalizzata *">
@@ -679,18 +729,18 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
 
         {step === 1 && (
           <View style={styles.panel}>
-            <Field error={fieldErrors.place} label="Luogo *">
+            <Field error={fieldErrors.place} label="Indirizzo *">
               <View style={styles.autocompleteWrap}>
                 <View style={styles.placeInputWrap}>
                   <TextInput
                     autoCorrect={false}
                     onBlur={() => setTimeout(() => setPlaceSuggestionsOpen(false), 120)}
                     onChangeText={handlePlaceChange}
-                    onFocus={() => setPlaceSuggestionsOpen(place.trim().length > 1)}
-                    placeholder="Es. Stazione Centrale, Milano"
+                    onFocus={() => setPlaceSuggestionsOpen(addressInputValue.trim().length > 1)}
+                    placeholder="Es. Via Roma 10, Milano"
                     placeholderTextColor={colors.muted}
                     style={styles.placeInput}
-                    value={place}
+                    value={addressInputValue}
                   />
                   <Ionicons color={selectedPlace ? colors.green : colors.muted} name="search-outline" size={20} />
                 </View>
@@ -699,7 +749,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
                   <View style={styles.suggestionList}>
                     {filteredPlaceSuggestions.map((suggestion, index) => (
                       <Pressable
-                        accessibilityLabel={`Seleziona luogo ${suggestion.name}, ${suggestion.address}`}
+                        accessibilityLabel={`Seleziona indirizzo ${suggestion.name}, ${suggestion.address}`}
                         accessibilityRole="button"
                         key={placeSuggestionKey(suggestion, index)}
                         onPress={() => choosePlace(suggestion)}
@@ -736,18 +786,18 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
               </View>
             </Field>
 
-            <Field error={fieldErrors.address} label="Indirizzo">
-              <TextInput
-                onChangeText={(value) => {
-                  setAddress(value);
-                  clearFieldError("address");
-                }}
-                placeholder="Via, civico, citta..."
-                placeholderTextColor={colors.muted}
-                style={styles.input}
-                value={address}
+            <FormField
+              helper="Puoi scegliere un suggerimento oppure spostare il POI direttamente sulla mappa."
+              label="Posizione sulla mappa"
+            >
+              <PlacePickerMap
+                category={selectedType.category}
+                coordinates={placeCoordinates}
+                fallbackCoordinates={originCoordinates}
+                onChange={chooseMapCoordinates}
+                onExpand={() => setPlaceMapOpen(true)}
               />
-            </Field>
+            </FormField>
 
             <View style={styles.inlineFields}>
               <Field compact error={fieldErrors.date} label="Data *">
@@ -822,8 +872,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
               </Field>
             </View>
 
-            <View style={styles.fieldGroup}>
-              <Text style={styles.label}>Tipo chat</Text>
+            <FormField label="Tipo chat">
               <ChatChoice
                 active={chatMode === "Gruppo aperto"}
                 icon="💬"
@@ -838,7 +887,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
                 title="Solo annunci"
                 onPress={() => setChatMode("Solo annunci")}
               />
-            </View>
+            </FormField>
           </View>
         )}
 
@@ -849,7 +898,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
               <PillButton accent={selectedAccent} label={effectiveSubcategory || subcategoryDisplay} soft={colors.surface} />
               <Text style={styles.previewTitle}>{title || "Titolo evento"}</Text>
               <Text style={styles.previewMeta}>
-                {place || "Luogo"} · {priceLabel}
+                {addressInputValue || place || "Indirizzo"} · {priceLabel}
               </Text>
             </View>
 
@@ -857,7 +906,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
               <SummaryRow label="Tipo evento" value={`${effectiveSubcategory || subcategoryDisplay} ${selectedType.emoji}`} />
               <SummaryRow label="Data" value={date || "-"} />
               <SummaryRow label="Orario" value={time || "-"} />
-              <SummaryRow label="Luogo" value={place || "-"} />
+              <SummaryRow label="Indirizzo" value={addressInputValue || place || "-"} />
               <SummaryRow label="Posti" value={capacityLabel} />
               <SummaryRow label="Costo" value={priceLabel} />
               <SummaryRow label="Chat" value={chatMode === "Gruppo aperto" ? "Gruppo" : "Annunci"} last />
@@ -879,6 +928,19 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
           </Text>
         </Pressable>
       </View>
+
+      <Modal animationType="fade" onRequestClose={() => setPlaceMapOpen(false)} visible={placeMapOpen}>
+        <View style={styles.fullscreenMapRoot}>
+          <PlacePickerMap
+            category={selectedType.category}
+            coordinates={placeCoordinates}
+            fallbackCoordinates={originCoordinates}
+            fullscreen
+            onChange={chooseMapCoordinates}
+            onClose={() => setPlaceMapOpen(false)}
+          />
+        </View>
+      </Modal>
 
       <Modal
         animationType="fade"
@@ -937,11 +999,9 @@ type FieldProps = {
 
 function Field({ children, compact = false, error, label }: FieldProps) {
   return (
-    <View style={[styles.fieldGroup, compact && styles.inlineField]}>
-      <Text style={styles.label}>{label}</Text>
+    <FormField compact={compact} error={error} label={label}>
       {children}
-      {error ? <Text style={styles.fieldErrorText}>{error}</Text> : null}
-    </View>
+    </FormField>
   );
 }
 
@@ -1060,47 +1120,24 @@ const styles = StyleSheet.create({
   panel: {
     gap: spacing.lg
   },
-  sectionLabel: {
-    color: colors.muted,
-    fontSize: 14,
-    fontWeight: "900",
-    textTransform: "uppercase"
-  },
   typeGrid: {
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.md
   },
-  fieldGroup: {
-    gap: spacing.sm
-  },
-  fieldErrorText: {
-    color: colors.danger,
-    fontSize: 12,
-    fontWeight: "800",
-    lineHeight: 16
-  },
   inlineFields: {
     flexDirection: "row",
     gap: spacing.lg
   },
-  inlineField: {
-    flex: 1
-  },
-  label: {
-    color: colors.ink,
-    fontSize: 18,
-    fontWeight: "900"
-  },
   input: {
     backgroundColor: colors.surface,
-    borderColor: "#D8D3CC",
+    borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
     color: colors.ink,
-    fontSize: 18,
-    minHeight: 64,
-    paddingHorizontal: spacing.lg,
+    fontSize: 16,
+    minHeight: 56,
+    paddingHorizontal: spacing.md,
     ...shadow
   },
   inputError: {
@@ -1135,20 +1172,20 @@ const styles = StyleSheet.create({
   selectButton: {
     alignItems: "center",
     backgroundColor: colors.surface,
-    borderColor: "#D8D3CC",
+    borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.md,
     justifyContent: "space-between",
-    minHeight: 64,
-    paddingHorizontal: spacing.lg,
+    minHeight: 56,
+    paddingHorizontal: spacing.md,
     ...shadow
   },
   selectText: {
     color: colors.ink,
     flex: 1,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "800"
   },
   selectOverlay: {
@@ -1216,20 +1253,20 @@ const styles = StyleSheet.create({
   placeInputWrap: {
     alignItems: "center",
     backgroundColor: colors.surface,
-    borderColor: "#D8D3CC",
+    borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.sm,
-    minHeight: 64,
-    paddingHorizontal: spacing.lg,
+    minHeight: 56,
+    paddingHorizontal: spacing.md,
     ...shadow
   },
   placeInput: {
     color: colors.ink,
     flex: 1,
-    fontSize: 18,
-    minHeight: 58
+    fontSize: 16,
+    minHeight: 54
   },
   suggestionList: {
     backgroundColor: colors.surface,
@@ -1277,33 +1314,19 @@ const styles = StyleSheet.create({
     fontWeight: "900"
   },
   textArea: {
-    minHeight: 150,
-    paddingTop: spacing.lg,
+    minHeight: 128,
+    paddingTop: spacing.md,
     textAlignVertical: "top"
-  },
-  iconInput: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: "#D8D3CC",
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 64,
-    paddingHorizontal: spacing.md,
-    ...shadow
-  },
-  inlineInput: {
-    color: colors.ink,
-    flex: 1,
-    fontSize: 18,
-    minHeight: 58
   },
   warningText: {
     color: colors.danger,
     fontSize: 13,
     fontWeight: "800",
     marginTop: -spacing.sm
+  },
+  fullscreenMapRoot: {
+    backgroundColor: colors.background,
+    flex: 1
   },
   chatChoice: {
     backgroundColor: colors.surface,

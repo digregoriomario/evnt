@@ -50,6 +50,15 @@ export type Coordinates = {
 
 export type LocationStatus = "loading" | "granted" | "denied" | "unavailable";
 
+export type PriceFilter = "tutti" | "gratis" | "pagamento";
+
+export type EventFilterState = {
+  category: Category | "Tutti";
+  price: PriceFilter;
+  query: string;
+  radiusKm: number;
+};
+
 export type UserProfile = {
   id?: number;
   avatar?: string;

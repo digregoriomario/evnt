@@ -8,6 +8,8 @@ import { EmptyState } from "./EmptyState";
 type NotificationsModalProps = {
   notifications: Notification[];
   onClose: () => void;
+  onDeleteAll: () => void;
+  onDeleteNotification: (notificationId: number) => void;
   onMarkAllRead: () => void;
   onPressNotification: (notification: Notification) => void;
   visible: boolean;
@@ -40,6 +42,8 @@ const notificationAccents: Record<NotificationType, string> = {
 export function NotificationsModal({
   notifications,
   onClose,
+  onDeleteAll,
+  onDeleteNotification,
   onMarkAllRead,
   onPressNotification,
   visible
@@ -68,16 +72,27 @@ export function NotificationsModal({
           </View>
 
           {notifications.length > 0 ? (
-            <Pressable
-              accessibilityRole="button"
-              disabled={unreadCount === 0}
-              onPress={onMarkAllRead}
-              style={[styles.markAllButton, unreadCount === 0 && styles.markAllButtonDisabled]}
-            >
-              <Text style={[styles.markAllText, unreadCount === 0 && styles.markAllTextDisabled]}>
-                Segna tutte come lette
-              </Text>
-            </Pressable>
+            <View style={styles.actionRow}>
+              <Pressable
+                accessibilityRole="button"
+                disabled={unreadCount === 0}
+                onPress={onMarkAllRead}
+                style={[styles.markAllButton, unreadCount === 0 && styles.markAllButtonDisabled]}
+              >
+                <Text style={[styles.markAllText, unreadCount === 0 && styles.markAllTextDisabled]}>
+                  Segna tutte come lette
+                </Text>
+              </Pressable>
+              <Pressable
+                accessibilityLabel="Cancella tutte le notifiche"
+                accessibilityRole="button"
+                onPress={onDeleteAll}
+                style={styles.deleteAllButton}
+              >
+                <Ionicons color={colors.danger} name="trash-outline" size={16} />
+                <Text style={styles.deleteAllText}>Cancella tutte</Text>
+              </Pressable>
+            </View>
           ) : null}
 
           <ScrollView contentContainerStyle={styles.list} showsVerticalScrollIndicator={false}>
@@ -92,6 +107,7 @@ export function NotificationsModal({
                 <NotificationRow
                   key={notification.id}
                   notification={notification}
+                  onDelete={() => onDeleteNotification(notification.id)}
                   onPress={() => onPressNotification(notification)}
                 />
               ))
@@ -105,10 +121,11 @@ export function NotificationsModal({
 
 type NotificationRowProps = {
   notification: Notification;
+  onDelete: () => void;
   onPress: () => void;
 };
 
-function NotificationRow({ notification, onPress }: NotificationRowProps) {
+function NotificationRow({ notification, onDelete, onPress }: NotificationRowProps) {
   const accent = notificationAccents[notification.type] ?? colors.primary;
   const icon = notificationIcons[notification.type] ?? "notifications-outline";
 
@@ -134,7 +151,21 @@ function NotificationRow({ notification, onPress }: NotificationRowProps) {
         </Text>
         <Text style={styles.rowTime}>{formatNotificationTime(notification.createdAt)}</Text>
       </View>
-      {notification.eventId ? <Ionicons color={colors.muted} name="chevron-forward" size={18} /> : null}
+      <View style={styles.rowActions}>
+        <Pressable
+          accessibilityLabel={`Cancella notifica ${notification.title}`}
+          accessibilityRole="button"
+          hitSlop={8}
+          onPress={(event) => {
+            event.stopPropagation();
+            onDelete();
+          }}
+          style={styles.deleteButton}
+        >
+          <Ionicons color={colors.danger} name="trash-outline" size={17} />
+        </Pressable>
+        {notification.eventId ? <Ionicons color={colors.muted} name="chevron-forward" size={18} /> : null}
+      </View>
     </Pressable>
   );
 }
@@ -174,6 +205,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     justifyContent: "space-between"
   },
+  actionRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: spacing.sm
+  },
   title: {
     color: colors.ink,
     fontSize: 24,
@@ -211,6 +247,21 @@ const styles = StyleSheet.create({
   markAllTextDisabled: {
     color: colors.muted
   },
+  deleteAllButton: {
+    alignItems: "center",
+    alignSelf: "flex-start",
+    backgroundColor: colors.roseSoft,
+    borderRadius: radius.sm,
+    flexDirection: "row",
+    gap: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  deleteAllText: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: "900"
+  },
   list: {
     gap: spacing.sm,
     paddingBottom: spacing.lg
@@ -239,6 +290,18 @@ const styles = StyleSheet.create({
   rowCopy: {
     flex: 1,
     gap: 3
+  },
+  rowActions: {
+    alignItems: "center",
+    flexDirection: "row",
+    gap: spacing.xs
+  },
+  deleteButton: {
+    alignItems: "center",
+    borderRadius: 17,
+    height: 34,
+    justifyContent: "center",
+    width: 34
   },
   rowTitleLine: {
     alignItems: "center",

@@ -13,6 +13,7 @@ import {
 
 import { CategoryChip } from "../components/CategoryChip";
 import { DateTimePickerField } from "../components/DateTimePickerField";
+import { FormField } from "../components/FormField";
 import { ProfileImagePicker } from "../components/ProfileImagePicker";
 import { api, ApiError } from "../api";
 import { searchCitiesWorldwide } from "../api/geocoding";
@@ -654,8 +655,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
                       value={bio}
                     />
                   </Field>
-                  <View style={styles.fieldGroup}>
-                    <Text style={styles.label}>Interessi</Text>
+                  <FormField error={fieldErrors.interests} label="Interessi">
                     <View style={styles.chips}>
                       {categories.map((category) => (
                         <CategoryChip
@@ -666,8 +666,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
                         />
                       ))}
                     </View>
-                    {fieldErrors.interests ? <Text style={styles.fieldErrorText}>{fieldErrors.interests}</Text> : null}
-                  </View>
+                  </FormField>
                 </>
               )}
 
@@ -767,11 +766,9 @@ type FieldProps = {
 
 function Field({ children, error, label }: FieldProps) {
   return (
-    <View style={styles.fieldGroup}>
-      <Text style={styles.label}>{label}</Text>
+    <FormField error={error} label={label}>
       {children}
-      {error ? <Text style={styles.fieldErrorText}>{error}</Text> : null}
-    </View>
+    </FormField>
   );
 }
 
@@ -961,33 +958,21 @@ const styles = StyleSheet.create({
     lineHeight: 18,
     padding: spacing.sm
   },
-  fieldErrorText: {
-    color: colors.danger,
-    fontSize: 12,
-    fontWeight: "800",
-    lineHeight: 16
-  },
-  fieldGroup: { gap: spacing.sm },
-  label: {
-    color: colors.ink,
-    fontSize: 13,
-    fontWeight: "900"
-  },
   input: {
     backgroundColor: colors.surface,
     borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
     color: colors.ink,
-    fontSize: 15,
-    minHeight: 48,
+    fontSize: 16,
+    minHeight: 56,
     paddingHorizontal: spacing.md
   },
   passwordInput: {
     color: colors.ink,
     flex: 1,
-    fontSize: 15,
-    minHeight: 46
+    fontSize: 16,
+    minHeight: 54
   },
   passwordInputWrap: {
     alignItems: "center",
@@ -996,7 +981,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: "row",
-    minHeight: 48,
+    minHeight: 56,
     paddingLeft: spacing.md,
     paddingRight: spacing.xs
   },
@@ -1015,15 +1000,15 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: "row",
-    minHeight: 48,
+    minHeight: 56,
     paddingLeft: spacing.md,
     paddingRight: spacing.md
   },
   emailInput: {
     color: colors.ink,
     flex: 1,
-    fontSize: 15,
-    minHeight: 46
+    fontSize: 16,
+    minHeight: 54
   },
   textArea: {
     minHeight: 104,
@@ -1036,8 +1021,8 @@ const styles = StyleSheet.create({
   cityInput: {
     color: colors.ink,
     flex: 1,
-    fontSize: 15,
-    minHeight: 46
+    fontSize: 16,
+    minHeight: 54
   },
   cityInputWrap: {
     alignItems: "center",
@@ -1047,7 +1032,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.sm,
-    minHeight: 48,
+    minHeight: 56,
     paddingHorizontal: spacing.md
   },
   chips: {

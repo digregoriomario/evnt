@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, Text, View } from "react-native";
 
-import { colors, radius, spacing } from "../theme";
+import { colors, hitSlop, radius, spacing } from "../theme";
 import { ScreenKey } from "../types";
 
 type TabItem = {
@@ -35,17 +35,19 @@ export function BottomNav({ active, badgeCounts = {}, onChange }: BottomNavProps
           : tab.icon) as keyof typeof Ionicons.glyphMap;
         return (
           <Pressable
+            accessibilityLabel={tab.label}
             accessibilityRole="tab"
             accessibilityState={{ selected }}
+            hitSlop={hitSlop}
             key={tab.key}
             onPress={() => onChange(tab.key)}
             style={[styles.item, selected && styles.activeItem]}
           >
-            <View style={styles.iconWrap}>
+            <View style={[styles.iconWrap, selected && styles.activeIconWrap]}>
               <Ionicons
-                color={selected ? colors.primary : colors.muted}
+                color={selected ? colors.surface : colors.muted}
                 name={iconName}
-                size={22}
+                size={21}
               />
               {badgeCount > 0 ? (
                 <View style={styles.badge}>
@@ -68,23 +70,31 @@ const styles = StyleSheet.create({
     borderTopColor: colors.line,
     borderTopWidth: 1,
     flexDirection: "row",
-    paddingBottom: spacing.sm,
-    paddingHorizontal: spacing.sm,
+    paddingBottom: spacing.md,
+    paddingHorizontal: spacing.md,
     paddingTop: spacing.sm
   },
   item: {
     alignItems: "center",
     borderRadius: radius.md,
     flex: 1,
-    gap: 2,
+    gap: 4,
     justifyContent: "center",
-    minHeight: 54
+    minHeight: 56
   },
   activeItem: {
-    backgroundColor: colors.surfaceMuted
+    backgroundColor: "transparent"
   },
   iconWrap: {
-    position: "relative"
+    alignItems: "center",
+    borderRadius: 18,
+    height: 36,
+    justifyContent: "center",
+    position: "relative",
+    width: 44
+  },
+  activeIconWrap: {
+    backgroundColor: colors.ink
   },
   badge: {
     alignItems: "center",
@@ -107,7 +117,7 @@ const styles = StyleSheet.create({
   label: {
     color: colors.muted,
     fontSize: 11,
-    fontWeight: "700"
+    fontWeight: "800"
   },
   activeLabel: {
     color: colors.primary

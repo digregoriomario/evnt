@@ -21,6 +21,7 @@ type EventDetailScreenProps = {
   onBack: () => void;
   onDelete?: () => void;
   onEdit?: () => void;
+  onOpenChat?: () => void;
   onToggleFavorite: () => void;
   onToggleRegistration: () => void;
 };
@@ -33,6 +34,7 @@ export function EventDetailScreen({
   onBack,
   onDelete,
   onEdit,
+  onOpenChat,
   onToggleFavorite,
   onToggleRegistration
 }: EventDetailScreenProps) {
@@ -174,14 +176,27 @@ export function EventDetailScreen({
           <Text style={styles.ctaMeta}>{registered ? "Partecipazione confermata" : seatsLabel}</Text>
         </View>
         {registered ? (
-          <Pressable
-            accessibilityLabel="Annulla partecipazione"
-            accessibilityRole="button"
-            onPress={onToggleRegistration}
-            style={styles.secondaryCtaButton}
-          >
-            <Text style={styles.secondaryCtaText}>Annulla iscrizione</Text>
-          </Pressable>
+          <View style={styles.ctaActions}>
+            {onOpenChat ? (
+              <Pressable
+                accessibilityLabel="Apri chat evento"
+                accessibilityRole="button"
+                onPress={onOpenChat}
+                style={styles.chatCtaButton}
+              >
+                <Ionicons color={colors.surface} name="chatbubble-ellipses-outline" size={18} />
+                <Text style={styles.chatCtaText}>Chat</Text>
+              </Pressable>
+            ) : null}
+            <Pressable
+              accessibilityLabel="Annulla partecipazione"
+              accessibilityRole="button"
+              onPress={onToggleRegistration}
+              style={styles.secondaryCtaButton}
+            >
+              <Text style={styles.secondaryCtaText}>Annulla</Text>
+            </Pressable>
+          </View>
         ) : (
           <Pressable
             accessibilityLabel="Partecipa all'evento"
@@ -487,6 +502,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     flexDirection: "row",
     gap: spacing.sm
+  },
+  chatCtaButton: {
+    alignItems: "center",
+    backgroundColor: colors.ink,
+    borderRadius: radius.md,
+    flexDirection: "row",
+    gap: spacing.xs,
+    justifyContent: "center",
+    minHeight: 50,
+    paddingHorizontal: spacing.md
+  },
+  chatCtaText: {
+    color: colors.surface,
+    fontSize: 14,
+    fontWeight: "900"
   },
   secondaryCtaButton: {
     alignItems: "center",

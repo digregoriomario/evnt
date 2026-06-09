@@ -1,6 +1,6 @@
 import { StatusBar } from "expo-status-bar";
 import * as Location from "expo-location";
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Component, type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { ActivityIndicator, AppState, Platform, StyleSheet, Text, View } from "react-native";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 
@@ -14,6 +14,7 @@ import { HomeScreen } from "./src/screens/HomeScreen";
 import { InboxScreen } from "./src/screens/InboxScreen";
 import { MapScreen } from "./src/screens/MapScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen";
+import { useEventFilters } from "./src/presentation/hooks/useEventFilters";
 import {
   addPushNotificationResponseListener,
   addPushTokenRefreshListener,
@@ -55,7 +56,42 @@ function activeEvents<T extends EvntEvent>(events: T[]) {
   return events.filter((event) => !isClosedEvent(event, now));
 }
 
-export default function App() {
+type AppErrorBoundaryProps = {
+  children: ReactNode;
+};
+
+type AppErrorBoundaryState = {
+  message?: string;
+};
+
+class AppErrorBoundary extends Component<AppErrorBoundaryProps, AppErrorBoundaryState> {
+  state: AppErrorBoundaryState = {};
+
+  static getDerivedStateFromError(error: Error): AppErrorBoundaryState {
+    return { message: error.message || "Errore imprevisto." };
+  }
+
+  render() {
+    if (this.state.message) {
+      return (
+        <SafeAreaProvider>
+          <SafeAreaView edges={["top", "right", "bottom", "left"]} style={styles.safeArea}>
+            <StatusBar style="dark" />
+            <View style={styles.errorScreen}>
+              <Text style={styles.errorLogo}>Evnt</Text>
+              <Text style={styles.errorTitle}>Qualcosa non e partito bene</Text>
+              <Text style={styles.errorText}>{this.state.message}</Text>
+            </View>
+          </SafeAreaView>
+        </SafeAreaProvider>
+      );
+    }
+
+    return this.props.children;
+  }
+}
+
+function AppContent() {
   const [user, setUser] = useState<UserProfile | null>(null);
   const [sessionLoading, setSessionLoading] = useState(true);
   const [events, setEvents] = useState<EvntEvent[]>([]);
@@ -65,6 +101,11 @@ export default function App() {
   const [favorites, setFavorites] = useState<Set<string>>(new Set());
   const [registrations, setRegistrations] = useState<Set<string>>(new Set());
   const [notifications, setNotifications] = useState<Notification[]>([]);
+  const {
+    filters: eventFilters,
+    resetFilters: resetEventFilters,
+    updateFilters: updateEventFilters
+  } = useEventFilters();
   const [pushToken, setPushToken] = useState<string | null>(null);
   const [online, setOnline] = useState(false);
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("loading");
@@ -143,7 +184,7 @@ export default function App() {
 
   const openInbox = (eventId?: string) => {
     setEditingEventId(undefined);
-    setInitialChatEventId(undefined);
+    setInitialChatEventId(eventId);
     if (mainScreens.includes(screen)) {
       setPreviousScreen(screen);
     }
@@ -216,6 +257,29 @@ export default function App() {
       void api.markAllRead().catch(() => undefined);
     }
   };
+
+  const deleteNotification = useCallback(
+    (notificationId: number) => {
+      setNotifications((current) => current.filter((notification) => notification.id !== notificationId));
+      if (online) {
+        void api.deleteNotification(notificationId).catch(() => {
+          showToast("Non sono riuscito a cancellare la notifica.", "warning");
+          void refreshNotifications();
+        });
+      }
+    },
+    [online, refreshNotifications, showToast]
+  );
+
+  const deleteAllNotifications = useCallback(() => {
+    setNotifications([]);
+    if (online) {
+      void api.deleteAllNotifications().catch(() => {
+        showToast("Non sono riuscito a cancellare tutte le notifiche.", "warning");
+        void refreshNotifications();
+      });
+    }
+  }, [online, refreshNotifications, showToast]);
 
   const syncPushToken = useCallback(
     async (token: string) => {
@@ -659,7 +723,11 @@ export default function App() {
         image: nextProfile.avatar,
         interests: nextProfile.interests
       });
-      const savedProfile = { ...nextProfile, ...remoteUser };
+      const savedProfile = {
+        ...nextProfile,
+        ...remoteUser,
+        cityCoordinates: remoteUser.cityCoordinates ?? nextProfile.cityCoordinates
+      };
       applyProfile(savedProfile);
       const token = getAuthToken();
       if (token) {
@@ -956,6 +1024,7 @@ export default function App() {
           onBack={closeDetail}
           onDelete={() => deleteEvent(selectedEvent)}
           onEdit={() => editEvent(selectedEvent)}
+          onOpenChat={registrations.has(selectedEvent.id) ? () => openInbox(selectedEvent.id) : undefined}
           onToggleFavorite={() => toggleFavorite(selectedEvent.id)}
           onToggleRegistration={() => toggleRegistration(selectedEvent.id)}
           registered={registrations.has(selectedEvent.id)}
@@ -983,9 +1052,12 @@ export default function App() {
         <MapScreen
           events={events}
           favorites={favorites}
+          filters={eventFilters}
           locationStatus={locationStatus}
+          onFiltersChange={updateEventFilters}
           onOpenEvent={openEvent}
           onRequestLocation={requestUserLocation}
+          onResetFilters={resetEventFilters}
           onToggleFavorite={toggleFavorite}
           registrations={registrations}
           user={user}
@@ -1028,8 +1100,12 @@ export default function App() {
       <HomeScreen
         events={events}
         favorites={favorites}
+        filters={eventFilters}
         locationStatus={locationStatus}
         notifications={notifications}
+        onDeleteAllNotifications={deleteAllNotifications}
+        onDeleteNotification={deleteNotification}
+        onFiltersChange={updateEventFilters}
         onMarkAllNotificationsRead={markAllNotificationsRead}
         onOpenEvent={openEvent}
         onOpenNotification={(notification) => {
@@ -1037,6 +1113,7 @@ export default function App() {
         }}
         onRefresh={refreshAppData}
         onRequestLocation={requestUserLocation}
+        onResetFilters={resetEventFilters}
         onToggleFavorite={toggleFavorite}
         registrations={registrations}
         user={user}
@@ -1071,6 +1148,14 @@ export default function App() {
   );
 }
 
+export default function App() {
+  return (
+    <AppErrorBoundary>
+      <AppContent />
+    </AppErrorBoundary>
+  );
+}
+
 const styles = StyleSheet.create({
   safeArea: {
     backgroundColor: colors.background,
@@ -1097,6 +1182,31 @@ const styles = StyleSheet.create({
     color: colors.ink,
     fontSize: 34,
     fontWeight: "900"
+  },
+  errorScreen: {
+    alignItems: "center",
+    flex: 1,
+    gap: spacing.md,
+    justifyContent: "center",
+    padding: spacing.xl
+  },
+  errorLogo: {
+    color: colors.ink,
+    fontSize: 34,
+    fontWeight: "900"
+  },
+  errorTitle: {
+    color: colors.ink,
+    fontSize: 18,
+    fontWeight: "900",
+    textAlign: "center"
+  },
+  errorText: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "700",
+    lineHeight: 19,
+    textAlign: "center"
   },
   toastLayer: {
     bottom: spacing.lg,

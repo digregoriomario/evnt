@@ -1,9 +1,9 @@
 import { Ionicons } from "@expo/vector-icons";
-import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
+import { Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
 
 import { categories } from "../data/events";
-import { colors, radius, spacing } from "../theme";
-import { Category } from "../types";
+import { colors, form, radius, spacing } from "../theme";
+import { Category, PriceFilter } from "../types";
 import { CategoryChip } from "./CategoryChip";
 import { PillButton } from "./PillButton";
 
@@ -12,15 +12,16 @@ type MapFiltersModalProps = {
   onCategoryChange: (category: Category | "Tutti") => void;
   onClose: () => void;
   onPriceChange: (price: PriceFilter) => void;
+  onQueryChange: (query: string) => void;
   onRadiusChange: (radiusKm: number) => void;
   onReset: () => void;
   price: PriceFilter;
+  query: string;
   radiusKm: number;
   radiusOptions: number[];
   visible: boolean;
 };
 
-export type PriceFilter = "tutti" | "gratis" | "pagamento";
 export type MapFiltersSheetProps = Omit<MapFiltersModalProps, "visible">;
 
 export function MapFiltersModal({
@@ -28,9 +29,11 @@ export function MapFiltersModal({
   onCategoryChange,
   onClose,
   onPriceChange,
+  onQueryChange,
   onRadiusChange,
   onReset,
   price,
+  query,
   radiusKm,
   radiusOptions,
   visible
@@ -43,9 +46,11 @@ export function MapFiltersModal({
           onCategoryChange={onCategoryChange}
           onClose={onClose}
           onPriceChange={onPriceChange}
+          onQueryChange={onQueryChange}
           onRadiusChange={onRadiusChange}
           onReset={onReset}
           price={price}
+          query={query}
           radiusKm={radiusKm}
           radiusOptions={radiusOptions}
         />
@@ -59,19 +64,18 @@ export function MapFiltersSheet({
   onCategoryChange,
   onClose,
   onPriceChange,
+  onQueryChange,
   onRadiusChange,
   onReset,
   price,
+  query,
   radiusKm,
   radiusOptions
 }: MapFiltersSheetProps) {
   return (
     <View style={styles.filterSheet}>
       <View style={styles.sheetHeader}>
-        <View>
-          <Text style={styles.sheetEyebrow}>Mappa</Text>
-          <Text style={styles.sheetTitle}>Filtri</Text>
-        </View>
+        <Text style={styles.sheetTitle}>Filtri</Text>
         <Pressable
           accessibilityLabel="Chiudi filtri"
           accessibilityRole="button"
@@ -81,6 +85,32 @@ export function MapFiltersSheet({
         >
           <Ionicons color={colors.ink} name="close" size={22} />
         </Pressable>
+      </View>
+
+      <View style={styles.filterSection}>
+        <Text style={styles.filterLabel}>Ricerca</Text>
+        <View style={styles.searchInputWrap}>
+          <Ionicons color={colors.muted} name="search-outline" size={19} />
+          <TextInput
+            accessibilityLabel="Cerca nei filtri"
+            autoCapitalize="none"
+            onChangeText={onQueryChange}
+            placeholder="Titolo, luogo o citta"
+            placeholderTextColor={colors.muted}
+            style={styles.searchInput}
+            value={query}
+          />
+          {query.length > 0 ? (
+            <Pressable
+              accessibilityLabel="Cancella ricerca"
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={() => onQueryChange("")}
+            >
+              <Ionicons color={colors.muted} name="close-circle" size={20} />
+            </Pressable>
+          ) : null}
+        </View>
       </View>
 
       <View style={styles.filterSection}>
@@ -122,16 +152,11 @@ export function MapFiltersSheet({
           <Text style={styles.filterLabel}>Raggio d'azione</Text>
           <Text style={styles.radiusValue}>{radiusKm} km</Text>
         </View>
-        <View style={styles.optionGrid}>
-          {radiusOptions.map((value) => (
-            <FilterOption
-              key={value}
-              label={`${value} km`}
-              selected={radiusKm === value}
-              onPress={() => onRadiusChange(value)}
-            />
-          ))}
-        </View>
+        <RadiusSegmentedControl
+          onChange={onRadiusChange}
+          options={radiusOptions}
+          value={radiusKm}
+        />
       </View>
 
       <View style={styles.sheetActions}>
@@ -142,6 +167,34 @@ export function MapFiltersSheet({
           <Text style={styles.primaryActionText}>Mostra eventi</Text>
         </Pressable>
       </View>
+    </View>
+  );
+}
+
+type RadiusSegmentedControlProps = {
+  onChange: (value: number) => void;
+  options: number[];
+  value: number;
+};
+
+function RadiusSegmentedControl({ onChange, options, value }: RadiusSegmentedControlProps) {
+  return (
+    <View style={styles.segmented}>
+      {options.map((option) => {
+        const selected = value === option;
+        return (
+          <Pressable
+            accessibilityLabel={`Raggio ${option} chilometri`}
+            accessibilityRole="button"
+            accessibilityState={{ selected }}
+            key={option}
+            onPress={() => onChange(option)}
+            style={[styles.segment, selected && styles.segmentActive]}
+          >
+            <Text style={[styles.segmentText, selected && styles.segmentTextActive]}>{option} km</Text>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -174,9 +227,7 @@ const styles = StyleSheet.create({
     width: 36
   },
   filterLabel: {
-    color: colors.ink,
-    fontSize: 15,
-    fontWeight: "900"
+    ...form.label
   },
   filterSection: {
     gap: spacing.md
@@ -197,6 +248,54 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm
+  },
+  searchInput: {
+    color: colors.ink,
+    flex: 1,
+    fontSize: 16,
+    fontWeight: "700",
+    minHeight: 54
+  },
+  searchInputWrap: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    minHeight: 56,
+    paddingHorizontal: spacing.md
+  },
+  segmented: {
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 2,
+    padding: 3
+  },
+  segment: {
+    alignItems: "center",
+    borderRadius: radius.sm,
+    flex: 1,
+    justifyContent: "center",
+    minHeight: 40,
+    paddingHorizontal: spacing.xs
+  },
+  segmentActive: {
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderWidth: 1
+  },
+  segmentText: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "900"
+  },
+  segmentTextActive: {
+    color: colors.ink
   },
   primaryAction: {
     alignItems: "center",
@@ -237,12 +336,6 @@ const styles = StyleSheet.create({
   sheetActions: {
     flexDirection: "row",
     gap: spacing.md
-  },
-  sheetEyebrow: {
-    color: colors.teal,
-    fontSize: 12,
-    fontWeight: "900",
-    textTransform: "uppercase"
   },
   sheetHeader: {
     alignItems: "center",

@@ -99,16 +99,16 @@ export function DateTimePickerField({
 const styles = StyleSheet.create({
   wrap: {
     backgroundColor: colors.surface,
-    borderColor: "#D8D3CC",
+    borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
     justifyContent: "center",
-    minHeight: 64,
+    minHeight: 56,
     paddingHorizontal: spacing.md
   },
   value: {
     color: colors.ink,
-    fontSize: 18,
+    fontSize: 16,
     fontWeight: "800"
   },
   placeholder: {
