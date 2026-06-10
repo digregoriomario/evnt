@@ -35,6 +35,12 @@ export type CreateEventPayload = {
   description: string;
   dateHour: string; // ISO
   place: string;
+  address?: string;
+  city?: string;
+  province?: string;
+  region?: string;
+  postcode?: string;
+  countryCode?: string;
   latitude: number;
   longitude: number;
   price: number;

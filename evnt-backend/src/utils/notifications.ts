@@ -1,7 +1,7 @@
 import { NotificationType } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { eventCleanupNow } from "./eventsCleanup";
-import { cityFromTags } from "./serialize";
+import { cityFromPlace, cityFromTags } from "./serialize";
 
 const scheduledNotificationIntervalMs = 60 * 60 * 1000;
 const hourMs = 60 * 60 * 1000;
@@ -34,6 +34,8 @@ type NotificationInput = {
 type PushDeliveryMode = "await" | "background";
 
 type EventSnapshot = {
+  address?: string | null;
+  city?: string | null;
   creatorId: number;
   dateHour: Date;
   id: number;
@@ -65,13 +67,6 @@ type ExpoPushResponse = {
 
 function normalizeText(value?: string | null) {
   return value?.trim().toLowerCase() ?? "";
-}
-
-function cityFromPlace(place: string) {
-  const parts = place.split(",").map((part) => part.trim()).filter(Boolean);
-  if (parts.length >= 4) return parts[parts.length - 3];
-  if (parts.length === 3) return parts[parts.length - 2];
-  return parts.length > 1 ? parts[parts.length - 1] : "";
 }
 
 function eventTimeLabel(date: Date) {
@@ -209,7 +204,8 @@ export async function notifyNewMatchingEvent(eventId: number) {
     return;
   }
 
-  const eventCity = cityFromTags(event.tags) ?? cityFromPlace(event.place);
+  const eventAddress = event.address ?? event.place;
+  const eventCity = event.city ?? cityFromTags(event.tags) ?? cityFromPlace(eventAddress);
   const users = await prisma.user.findMany({
     where: {
       id: { not: event.creatorId },
@@ -220,7 +216,7 @@ export async function notifyNewMatchingEvent(eventId: number) {
   const audience = users.filter(
     (user) => !eventCity || !user.city || normalizeText(user.city) === normalizeText(eventCity)
   );
-  const cityLabel = eventCity || event.place;
+  const cityLabel = eventCity || eventAddress;
 
   await createNotifications(
     audience.map((user) => ({
@@ -236,7 +232,8 @@ export async function notifyNewMatchingEvent(eventId: number) {
 
 export async function notifyEventUpdated(before: EventSnapshot, after: EventSnapshot) {
   const changedDate = before.dateHour.getTime() !== after.dateHour.getTime();
-  const changedPlace = normalizeText(before.place) !== normalizeText(after.place);
+  const changedPlace =
+    normalizeText(before.address ?? before.place) !== normalizeText(after.address ?? after.place);
   if (!changedDate && !changedPlace) {
     return;
   }

@@ -13,7 +13,14 @@ import {
   notifyEventUpdated,
   notifyNewMatchingEvent
 } from "../utils/notifications";
-import { labelToChatType, serializeEvent, subcategoryTagPrefix } from "../utils/serialize";
+import {
+  cityTagPrefix,
+  cityFromTags,
+  labelToChatType,
+  serializeEvent,
+  subcategoryFromTags,
+  subcategoryTagPrefix
+} from "../utils/serialize";
 
 export const eventsRouter = Router();
 
@@ -106,12 +113,41 @@ async function findOrCreateCategory(name: string) {
   });
 }
 
-function normalizeEventTags(tags: string[], subcategory?: string) {
+const italyBounds = {
+  maxLatitude: 47.1,
+  maxLongitude: 18.99,
+  minLatitude: 35.49,
+  minLongitude: 6.62
+};
+
+const optionalTrimmed = (max: number) => z.string().trim().min(1).max(max).optional();
+
+const latitudeSchema = z
+  .number()
+  .finite()
+  .min(italyBounds.minLatitude, "La latitudine deve essere in Italia")
+  .max(italyBounds.maxLatitude, "La latitudine deve essere in Italia");
+
+const longitudeSchema = z
+  .number()
+  .finite()
+  .min(italyBounds.minLongitude, "La longitudine deve essere in Italia")
+  .max(italyBounds.maxLongitude, "La longitudine deve essere in Italia");
+
+function eventIdFromParams(value: string) {
+  const id = Number(value);
+  if (!Number.isInteger(id) || id <= 0) {
+    throw new HttpError(400, "Evento non valido");
+  }
+  return id;
+}
+
+function normalizeEventTags(tags: string[], subcategory?: string, city?: string) {
   const seen = new Set<string>();
   const publicTags = tags
     .map((tag) => tag.trim())
     .filter((tag) => {
-      if (!tag || tag.startsWith(subcategoryTagPrefix)) {
+      if (!tag || tag.startsWith(subcategoryTagPrefix) || tag.startsWith(cityTagPrefix)) {
         return false;
       }
       const key = tag.toLowerCase();
@@ -122,10 +158,13 @@ function normalizeEventTags(tags: string[], subcategory?: string) {
       return true;
     });
   const normalizedSubcategory = subcategory?.trim();
+  const normalizedCity = city?.trim();
 
-  return normalizedSubcategory
-    ? [...publicTags, `${subcategoryTagPrefix}${normalizedSubcategory}`]
-    : publicTags;
+  return [
+    ...publicTags,
+    normalizedSubcategory ? `${subcategoryTagPrefix}${normalizedSubcategory}` : "",
+    normalizedCity ? `${cityTagPrefix}${normalizedCity}` : ""
+  ].filter(Boolean);
 }
 
 function serializeChatMessage(message: {
@@ -189,6 +228,8 @@ eventsRouter.get(
         { title: { contains: q.q, mode: "insensitive" } },
         { description: { contains: q.q, mode: "insensitive" } },
         { place: { contains: q.q, mode: "insensitive" } },
+        { address: { contains: q.q, mode: "insensitive" } },
+        { city: { contains: q.q, mode: "insensitive" } },
         { tags: { has: q.q } }
       ];
     }
@@ -236,7 +277,7 @@ eventsRouter.get(
   "/:id",
   authOptional,
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = eventIdFromParams(req.params.id);
     const event = await prisma.event.findUnique({ where: { id }, include: eventInclude });
     if (!event) throw new HttpError(404, "Evento non trovato");
     const ctx = await buildContext(req.userId);
@@ -251,19 +292,31 @@ eventsRouter.get(
 );
 
 const createSchema = z.object({
-  title: z.string().min(1),
-  description: z.string().max(2000).default(""),
+  title: z.string().trim().min(3).max(200),
+  description: z.string().trim().max(2000).default(""),
   dateHour: z.string().refine((v) => !Number.isNaN(Date.parse(v)), "Invalid date"),
-  place: z.string().min(1),
-  latitude: z.number(),
-  longitude: z.number(),
-  price: z.number().min(0).default(0),
-  maxSeats: z.number().int().positive().nullable().optional(),
-  category: z.string().min(1),
+  place: z.string().trim().min(1).max(255),
+  address: optionalTrimmed(255),
+  city: optionalTrimmed(120),
+  province: optionalTrimmed(120),
+  region: optionalTrimmed(120),
+  postcode: optionalTrimmed(20),
+  countryCode: z
+    .string()
+    .trim()
+    .length(2)
+    .transform((value) => value.toUpperCase())
+    .refine((value) => value === "IT", "Sono ammessi solo indirizzi italiani")
+    .optional(),
+  latitude: latitudeSchema,
+  longitude: longitudeSchema,
+  price: z.number().finite().min(0).max(10000).default(0),
+  maxSeats: z.number().int().positive().max(10000).nullable().optional(),
+  category: z.string().trim().min(1).max(120),
   chatMode: z.string().optional(),
   countCreator: z.boolean().default(true),
   image: z.string().url().optional(),
-  tags: z.array(z.string()).default([]),
+  tags: z.array(z.string().trim().min(1).max(140)).max(20).default([]),
   isLive: z.boolean().optional(),
   subcategory: z.string().trim().min(1).max(50).optional()
 });
@@ -282,6 +335,12 @@ eventsRouter.post(
         description: body.description,
         dateHour: new Date(body.dateHour),
         place: body.place,
+        address: body.address ?? body.place,
+        city: body.city,
+        province: body.province,
+        region: body.region,
+        postcode: body.postcode,
+        countryCode: body.countryCode ?? "IT",
         latitude: body.latitude,
         longitude: body.longitude,
         price: body.price,
@@ -289,7 +348,7 @@ eventsRouter.post(
         categoryId: category.id,
         chatType: labelToChatType(body.chatMode),
         image: body.image,
-        tags: normalizeEventTags(body.tags, body.subcategory),
+        tags: normalizeEventTags(body.tags, body.subcategory, body.city),
         isLive: body.isLive ?? false,
         creatorId: req.userId!,
         participations: body.countCreator ? { create: { userId: req.userId! } } : undefined
@@ -308,7 +367,7 @@ eventsRouter.put(
   "/:id",
   authRequired,
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = eventIdFromParams(req.params.id);
     const existing = await prisma.event.findUnique({ where: { id } });
     if (!existing) throw new HttpError(404, "Evento non trovato");
     if (existing.creatorId !== req.userId) throw new HttpError(403, "Non sei il creatore");
@@ -319,9 +378,11 @@ eventsRouter.put(
       const category = await findOrCreateCategory(body.category);
       categoryId = category.id;
     }
+    const nextSubcategory = body.subcategory ?? subcategoryFromTags(existing.tags);
+    const nextCity = body.city ?? existing.city ?? cityFromTags(existing.tags);
     const tags =
-      body.tags || body.subcategory
-        ? normalizeEventTags(body.tags ?? existing.tags, body.subcategory)
+      body.tags || body.subcategory || body.city
+        ? normalizeEventTags(body.tags ?? existing.tags, nextSubcategory, nextCity)
         : undefined;
 
     const event = await prisma.event.update({
@@ -331,6 +392,12 @@ eventsRouter.put(
         description: body.description,
         dateHour: body.dateHour ? new Date(body.dateHour) : undefined,
         place: body.place,
+        address: body.address ?? (body.place ? body.place : undefined),
+        city: body.city,
+        province: body.province,
+        region: body.region,
+        postcode: body.postcode,
+        countryCode: body.countryCode,
         latitude: body.latitude,
         longitude: body.longitude,
         price: body.price,
@@ -353,7 +420,7 @@ eventsRouter.delete(
   "/:id",
   authRequired,
   asyncHandler(async (req, res) => {
-    const id = Number(req.params.id);
+    const id = eventIdFromParams(req.params.id);
     const existing = await prisma.event.findUnique({ where: { id } });
     if (!existing) throw new HttpError(404, "Evento non trovato");
     if (existing.creatorId !== req.userId) throw new HttpError(403, "Non sei il creatore");
@@ -368,24 +435,41 @@ eventsRouter.post(
   "/:id/join",
   authRequired,
   asyncHandler(async (req, res) => {
-    const eventId = Number(req.params.id);
-    const event = await prisma.event.findUnique({
-      where: { id: eventId },
-      include: { _count: { select: { participations: true } } }
-    });
-    if (!event) throw new HttpError(404, "Evento non trovato");
-    if (event.maxSeats && event._count.participations >= event.maxSeats) {
-      const already = await prisma.participation.findUnique({
-        where: { userId_eventId: { userId: req.userId!, eventId } }
+    const eventId = eventIdFromParams(req.params.id);
+    const count = await prisma
+      .$transaction(
+        async (tx) => {
+          const event = await tx.event.findUnique({
+            where: { id: eventId },
+            include: { _count: { select: { participations: true } } }
+          });
+          if (!event) throw new HttpError(404, "Evento non trovato");
+
+          const already = await tx.participation.findUnique({
+            where: { userId_eventId: { userId: req.userId!, eventId } }
+          });
+          if (!already && event.maxSeats && event._count.participations >= event.maxSeats) {
+            throw new HttpError(409, "Evento al completo");
+          }
+
+          await tx.participation.upsert({
+            where: { userId_eventId: { userId: req.userId!, eventId } },
+            create: { userId: req.userId!, eventId },
+            update: {}
+          });
+          return tx.participation.count({ where: { eventId } });
+        },
+        { isolationLevel: Prisma.TransactionIsolationLevel.Serializable }
+      )
+      .catch((error) => {
+        if (error instanceof HttpError) {
+          throw error;
+        }
+        if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === "P2034") {
+          throw new HttpError(409, "Evento al completo. Riprova tra poco.");
+        }
+        throw error;
       });
-      if (!already) throw new HttpError(409, "Evento al completo");
-    }
-    await prisma.participation.upsert({
-      where: { userId_eventId: { userId: req.userId!, eventId } },
-      create: { userId: req.userId!, eventId },
-      update: {}
-    });
-    const count = await prisma.participation.count({ where: { eventId } });
     await notifyCapacityMilestones(eventId);
     res.json({ registered: true, participants: count });
   })
@@ -395,7 +479,7 @@ eventsRouter.delete(
   "/:id/join",
   authRequired,
   asyncHandler(async (req, res) => {
-    const eventId = Number(req.params.id);
+    const eventId = eventIdFromParams(req.params.id);
     await prisma.participation
       .delete({ where: { userId_eventId: { userId: req.userId!, eventId } } })
       .catch(() => undefined);
@@ -409,7 +493,9 @@ eventsRouter.post(
   "/:id/bookmark",
   authRequired,
   asyncHandler(async (req, res) => {
-    const eventId = Number(req.params.id);
+    const eventId = eventIdFromParams(req.params.id);
+    const event = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true } });
+    if (!event) throw new HttpError(404, "Evento non trovato");
     await prisma.bookmark.upsert({
       where: { userId_eventId: { userId: req.userId!, eventId } },
       create: { userId: req.userId!, eventId },
@@ -423,7 +509,7 @@ eventsRouter.delete(
   "/:id/bookmark",
   authRequired,
   asyncHandler(async (req, res) => {
-    const eventId = Number(req.params.id);
+    const eventId = eventIdFromParams(req.params.id);
     await prisma.bookmark
       .delete({ where: { userId_eventId: { userId: req.userId!, eventId } } })
       .catch(() => undefined);
@@ -436,7 +522,7 @@ eventsRouter.get(
   "/:id/messages",
   authRequired,
   asyncHandler(async (req, res) => {
-    const eventId = Number(req.params.id);
+    const eventId = eventIdFromParams(req.params.id);
     await getEventChatForUser(eventId, req.userId!);
     const messages = await prisma.chatMessage.findMany({
       where: { eventId },
@@ -453,7 +539,7 @@ eventsRouter.post(
   "/:id/messages",
   authRequired,
   asyncHandler(async (req, res) => {
-    const eventId = Number(req.params.id);
+    const eventId = eventIdFromParams(req.params.id);
     const { text } = messageSchema.parse(req.body);
     const event = await getEventChatForUser(eventId, req.userId!);
     if (event.chatType === "ANNOUNCEMENTS" && event.creatorId !== req.userId) {

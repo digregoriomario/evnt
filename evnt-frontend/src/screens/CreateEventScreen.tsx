@@ -480,14 +480,12 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
       return;
     }
 
-    const eventCity = resolvedPlace?.city ?? (canReuseInitialPlace ? initialEvent?.city : undefined) ?? user.city;
+    const eventCity = resolvedPlace?.city || (canReuseInitialPlace ? initialEvent?.city : undefined) || user.city;
     const eventPlace =
       (resolvedPlace?.name ?? (canReuseInitialPlace ? initialEvent?.place : undefined) ?? place.trim()) ||
       normalizedAddress;
-    const eventAddress =
-      normalizedAddress === pendingMapAddressLabel
-        ? resolvedPlace?.address ?? eventPlace
-        : normalizedAddress || resolvedPlace?.address || initialEvent?.address || eventPlace;
+    const typedAddress = normalizedAddress === pendingMapAddressLabel ? "" : normalizedAddress;
+    const eventAddress = resolvedPlace?.address ?? (typedAddress || initialEvent?.address || eventPlace);
     const event: EvntEvent = {
       id: initialEvent?.id ?? `created-${Date.now()}`,
       title: title.trim(),
@@ -497,6 +495,11 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
       place: eventPlace,
       city: eventCity,
       address: eventAddress,
+      province: resolvedPlace?.province ?? (canReuseInitialPlace ? initialEvent?.province : undefined),
+      region: resolvedPlace?.region ?? (canReuseInitialPlace ? initialEvent?.region : undefined),
+      postcode: resolvedPlace?.postcode ?? (canReuseInitialPlace ? initialEvent?.postcode : undefined),
+      countryCode:
+        resolvedPlace?.countryCode ?? (canReuseInitialPlace ? initialEvent?.countryCode : undefined) ?? "IT",
       price: isFree ? 0 : parsedPrice,
       distanceKm: resolvedPlace?.distanceKm ?? initialEvent?.distanceKm ?? 0,
       affinity: initialEvent?.affinity ?? 0,
@@ -593,6 +596,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     const manualPlace: PlaceSuggestion = {
       address: pendingMapAddressLabel,
       city: user.city,
+      countryCode: "IT",
       coordinates,
       distanceKm: originCoordinates ? distanceBetweenKm(originCoordinates, coordinates) : 0,
       name: fallbackName

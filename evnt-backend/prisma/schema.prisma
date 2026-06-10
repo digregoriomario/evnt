@@ -98,6 +98,12 @@ model Event {
   description String   @db.Text
   dateHour    DateTime @map("date_hour")
   place        String  @db.VarChar(255)
+  address      String? @db.VarChar(255)
+  city         String? @db.VarChar(120)
+  province     String? @db.VarChar(120)
+  region       String? @db.VarChar(120)
+  postcode     String? @db.VarChar(20)
+  countryCode  String? @map("country_code") @db.VarChar(2)
   latitude    Float
   longitude   Float
   geom        Unsupported("geometry(Point,4326)")? @default(dbgenerated("ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)")) @map("geom")

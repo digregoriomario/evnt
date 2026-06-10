@@ -22,6 +22,10 @@ export type EvntEvent = {
   place: string;
   city: string;
   address: string;
+  province?: string;
+  region?: string;
+  postcode?: string;
+  countryCode?: string;
   price: number;
   distanceKm: number;
   affinity: number;

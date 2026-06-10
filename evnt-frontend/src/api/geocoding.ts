@@ -12,6 +12,7 @@ type PhotonFeature = {
   properties?: {
     city?: string;
     country?: string;
+    countrycode?: string;
     county?: string;
     district?: string;
     housenumber?: string;
@@ -76,10 +77,18 @@ function isItalyCountry(country?: string) {
   return normalized === "italia" || normalized === "italy";
 }
 
+function isItalyCountryCode(countryCode?: string) {
+  return countryCode?.trim().toUpperCase() === "IT";
+}
+
 function isFeatureInItaly(feature: PhotonFeature) {
   const props = feature.properties ?? {};
   const coordinates = coordinatesFromFeature(feature);
-  return Boolean(coordinates && isWithinItalyBounds(coordinates) && isItalyCountry(props.country));
+  return Boolean(
+    coordinates &&
+      isWithinItalyBounds(coordinates) &&
+      (isItalyCountryCode(props.countrycode) || isItalyCountry(props.country))
+  );
 }
 
 type PhotonSearchOptions = {
@@ -165,15 +174,23 @@ function placeFromFeature(feature: PhotonFeature, origin?: Coordinates): PlaceSu
   }
 
   const streetLine = compact([props.street, props.housenumber]).join(" ");
-  const city = props.city ?? props.district ?? props.county ?? props.state ?? "";
-  const addressParts = unique(compact([streetLine, props.postcode, city, props.state, props.country]));
+  const primaryAddressLine = streetLine || props.name;
+  const city = props.city ?? props.county ?? props.state ?? "";
+  const province = props.county;
+  const region = props.state;
+  const countryCode = props.countrycode?.toUpperCase() ?? "IT";
+  const addressParts = unique(compact([primaryAddressLine, props.postcode, city, province, region, props.country]));
 
   return {
     address: addressParts.join(", ") || name,
     city,
+    countryCode,
     coordinates,
     distanceKm: origin ? distanceBetweenKm(origin, coordinates) : 0,
-    name
+    name,
+    postcode: props.postcode,
+    province,
+    region
   };
 }
 
