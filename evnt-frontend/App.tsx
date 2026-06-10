@@ -36,7 +36,7 @@ import {
   type Notification,
   type NotificationType
 } from "./src/api";
-import { searchCitiesWorldwide } from "./src/api/geocoding";
+import { searchItalianCities } from "./src/api/geocoding";
 
 const mainScreens: ScreenKey[] = ["home", "map", "create", "inbox", "profile"];
 const chatNotificationTypes = new Set<NotificationType>(["CHAT_MESSAGE", "ORGANIZER_ANNOUNCEMENT"]);
@@ -421,7 +421,7 @@ function AppContent() {
     }
 
     let cancelled = false;
-    searchCitiesWorldwide(user.city)
+    searchItalianCities(user.city)
       .then((suggestions) => {
         const [match] = suggestions;
         if (cancelled || !match) {

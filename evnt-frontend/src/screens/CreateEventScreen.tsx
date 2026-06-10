@@ -1,5 +1,5 @@
 import { Ionicons } from "@expo/vector-icons";
-import { ReactNode, useEffect, useMemo, useState } from "react";
+import { ReactNode, useEffect, useMemo, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
   Modal,
@@ -12,7 +12,7 @@ import {
   View
 } from "react-native";
 
-import { distanceBetweenKm, searchPlacesWorldwide } from "../api/geocoding";
+import { distanceBetweenKm, reverseGeocodeItalianPlace, searchItalianPlaces } from "../api/geocoding";
 import { DateTimePickerField } from "../components/DateTimePickerField";
 import { FormField } from "../components/FormField";
 import { PillButton } from "../components/PillButton";
@@ -79,6 +79,7 @@ const maxCustomSubcategoryLength = 50;
 const maxAddressLength = 180;
 const maxCapacity = 10000;
 const maxPrice = 10000;
+const pendingMapAddressLabel = "Indirizzo in verifica...";
 
 function toIsoDate(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
@@ -173,6 +174,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
   const [placeSuggestionsOpen, setPlaceSuggestionsOpen] = useState(false);
   const [remotePlaceSuggestions, setRemotePlaceSuggestions] = useState<PlaceSuggestion[]>([]);
   const [placeSearching, setPlaceSearching] = useState(false);
+  const [reverseGeocoding, setReverseGeocoding] = useState(false);
   const [date, setDate] = useState(() => dateTimeFromEvent(initialEvent).date);
   const [time, setTime] = useState(() => dateTimeFromEvent(initialEvent).time);
   const [capacity, setCapacity] = useState(initialEvent?.capacity ? String(initialEvent.capacity) : "");
@@ -182,6 +184,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
   const [formError, setFormError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<CreateFieldErrors>({});
   const [publishing, setPublishing] = useState(false);
+  const reverseLookupId = useRef(0);
 
   const parsedPrice = useMemo(() => Number.parseFloat(price.replace(",", ".")), [price]);
   const parsedCapacity = useMemo(() => Number.parseInt(capacity, 10), [capacity]);
@@ -228,6 +231,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     setPlaceSuggestionsOpen(false);
     setRemotePlaceSuggestions([]);
     setPlaceSearching(false);
+    setReverseGeocoding(false);
     setDate(nextDateTime.date);
     setTime(nextDateTime.time);
     setCapacity(initialEvent?.capacity ? String(initialEvent.capacity) : "");
@@ -259,7 +263,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     let cancelled = false;
     setPlaceSearching(true);
     const timeout = setTimeout(() => {
-      searchPlacesWorldwide(normalized, originCoordinates)
+      searchItalianPlaces(normalized, originCoordinates)
         .then((suggestions) => {
           if (!cancelled) {
             setRemotePlaceSuggestions(suggestions);
@@ -310,7 +314,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
               item.address.toLowerCase() === suggestion.address.toLowerCase()
           ) === index
       )
-      .slice(0, 6);
+      .slice(0, 8);
   }, [addressInputValue, originCoordinates, remotePlaceSuggestions]);
 
   const clearFieldError = (field: CreateField) => {
@@ -413,6 +417,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     setManualCoordinates(null);
     setPlaceMapOpen(false);
     setPlaceSuggestionsOpen(false);
+    setReverseGeocoding(false);
     setDate(nextDefault.date);
     setTime(nextDefault.time);
     setCapacity("");
@@ -439,22 +444,24 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
         .filter(Boolean)
         .some((value) => normalizedAddress.toLowerCase() === value?.trim().toLowerCase());
     let resolvedPlace =
-      selectedPlace ??
-      (manualCoordinates
-        ? {
-            address: normalizedAddress || `Coordinate ${manualCoordinates.latitude.toFixed(5)}, ${manualCoordinates.longitude.toFixed(5)}`,
-            city: user.city,
-            coordinates: manualCoordinates,
-            distanceKm: originCoordinates ? distanceBetweenKm(originCoordinates, manualCoordinates) : 0,
-            name: place.trim() || normalizedAddress || "Luogo selezionato sulla mappa"
-          }
-        : null);
+      selectedPlace?.address === pendingMapAddressLabel ? null : selectedPlace;
+
+    if (!resolvedPlace && manualCoordinates) {
+      resolvedPlace = await reverseGeocodeItalianPlace(manualCoordinates, originCoordinates).catch(() => null);
+      if (resolvedPlace) {
+        setSelectedPlace(resolvedPlace);
+        setManualCoordinates(resolvedPlace.coordinates);
+        setAddress(resolvedPlace.address);
+        setPlace(resolvedPlace.name);
+        setPlaceSuggestionsOpen(false);
+      }
+    }
 
     if (!resolvedPlace && !canReuseInitialPlace) {
       const [fallbackPlace] =
         filteredPlaceSuggestions.length > 0
           ? filteredPlaceSuggestions
-          : await searchPlacesWorldwide(normalizedAddress, originCoordinates).catch(() => []);
+          : await searchItalianPlaces(normalizedAddress, originCoordinates).catch(() => []);
       resolvedPlace = fallbackPlace ?? null;
 
       if (resolvedPlace) {
@@ -467,7 +474,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
 
     const coordinates = resolvedPlace?.coordinates ?? (canReuseInitialPlace ? initialEvent?.coordinates : undefined);
     if (!coordinates) {
-      showCreateErrors({ place: "Seleziona un luogo dai suggerimenti." });
+      showCreateErrors({ place: "Seleziona un indirizzo italiano dai suggerimenti o sposta il POI su un indirizzo in Italia." });
       setStep(1);
       setPublishing(false);
       return;
@@ -477,7 +484,10 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     const eventPlace =
       (resolvedPlace?.name ?? (canReuseInitialPlace ? initialEvent?.place : undefined) ?? place.trim()) ||
       normalizedAddress;
-    const eventAddress = normalizedAddress || resolvedPlace?.address || initialEvent?.address || eventPlace;
+    const eventAddress =
+      normalizedAddress === pendingMapAddressLabel
+        ? resolvedPlace?.address ?? eventPlace
+        : normalizedAddress || resolvedPlace?.address || initialEvent?.address || eventPlace;
     const event: EvntEvent = {
       id: initialEvent?.id ?? `created-${Date.now()}`,
       title: title.trim(),
@@ -577,11 +587,11 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
   };
 
   const chooseMapCoordinates = (coordinates: Coordinates) => {
-    const fallbackName = place.trim() || address.trim() || "Luogo selezionato sulla mappa";
-    const fallbackAddress =
-      address.trim() || place.trim() || `Coordinate ${coordinates.latitude.toFixed(5)}, ${coordinates.longitude.toFixed(5)}`;
+    const lookupId = reverseLookupId.current + 1;
+    reverseLookupId.current = lookupId;
+    const fallbackName = "Luogo selezionato sulla mappa";
     const manualPlace: PlaceSuggestion = {
-      address: fallbackAddress,
+      address: pendingMapAddressLabel,
       city: user.city,
       coordinates,
       distanceKm: originCoordinates ? distanceBetweenKm(originCoordinates, coordinates) : 0,
@@ -591,8 +601,39 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     setManualCoordinates(coordinates);
     setSelectedPlace(manualPlace);
     setPlace(fallbackName);
-    setAddress(fallbackAddress);
+    setAddress(pendingMapAddressLabel);
     clearFieldError("place");
+    setReverseGeocoding(true);
+
+    void reverseGeocodeItalianPlace(coordinates, originCoordinates)
+      .then((resolvedPlace) => {
+        if (reverseLookupId.current !== lookupId) {
+          return;
+        }
+
+        if (!resolvedPlace) {
+          setSelectedPlace(null);
+          setFormError("Sposta il POI su un indirizzo in Italia.");
+          return;
+        }
+
+        setManualCoordinates(resolvedPlace.coordinates);
+        setSelectedPlace(resolvedPlace);
+        setPlace(resolvedPlace.name);
+        setAddress(resolvedPlace.address);
+        setFormError("");
+      })
+      .catch(() => {
+        if (reverseLookupId.current === lookupId) {
+          setSelectedPlace(null);
+          setFormError("Non riesco a leggere l'indirizzo del POI. Riprova o scegli un suggerimento.");
+        }
+      })
+      .finally(() => {
+        if (reverseLookupId.current === lookupId) {
+          setReverseGeocoding(false);
+        }
+      });
   };
 
   const chooseSubcategory = (value: string) => {
@@ -777,7 +818,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
                         <Ionicons color={colors.ink} name="globe-outline" size={18} />
                       </View>
                       <View style={styles.suggestionCopy}>
-                        <Text style={styles.suggestionTitle}>Cerco luoghi in tutto il mondo...</Text>
+                        <Text style={styles.suggestionTitle}>Cerco indirizzi in Italia...</Text>
                         <Text style={styles.suggestionMeta}>OpenStreetMap</Text>
                       </View>
                     </View>
@@ -787,7 +828,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
             </Field>
 
             <FormField
-              helper="Puoi scegliere un suggerimento oppure spostare il POI direttamente sulla mappa."
+              helper={reverseGeocoding ? "Aggiorno l'indirizzo dal POI..." : "Puoi scegliere un suggerimento oppure spostare il POI direttamente sulla mappa."}
               label="Posizione sulla mappa"
             >
               <PlacePickerMap

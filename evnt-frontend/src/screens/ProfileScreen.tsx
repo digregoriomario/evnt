@@ -16,7 +16,7 @@ import { CategoryChip } from "../components/CategoryChip";
 import { EventCard } from "../components/EventCard";
 import { FormField } from "../components/FormField";
 import { ProfileImagePicker } from "../components/ProfileImagePicker";
-import { searchCitiesWorldwide } from "../api/geocoding";
+import { searchItalianCities } from "../api/geocoding";
 import { citySuggestions, type CitySuggestion } from "../data/cities";
 import { categories } from "../data/events";
 import { colors, radius, shadow, spacing } from "../theme";
@@ -44,6 +44,11 @@ function citySuggestionKey(suggestion: CitySuggestion, index: number) {
     longitude.toFixed(5),
     index
   ].join("-");
+}
+
+function findMatchingCitySuggestion(city: string, suggestions: CitySuggestion[]) {
+  const normalized = city.trim().toLowerCase();
+  return suggestions.find((suggestion) => suggestion.name.trim().toLowerCase() === normalized);
 }
 
 export function ProfileScreen({
@@ -86,7 +91,7 @@ export function ProfileScreen({
     let cancelled = false;
     setCitySearching(true);
     const timeout = setTimeout(() => {
-      searchCitiesWorldwide(normalized)
+      searchItalianCities(normalized)
         .then((suggestions) => {
           if (!cancelled) {
             setRemoteCitySuggestions(suggestions);
@@ -113,7 +118,7 @@ export function ProfileScreen({
   const filteredCitySuggestions = useMemo(() => {
     const normalized = draft.city.trim().toLowerCase();
     if (normalized.length === 0) {
-      return citySuggestions.slice(0, 5);
+      return citySuggestions.slice(0, 8);
     }
 
     const localSuggestions = citySuggestions.filter((suggestion) =>
@@ -129,7 +134,7 @@ export function ProfileScreen({
               item.province.toLowerCase() === suggestion.province.toLowerCase()
           ) === index
       )
-      .slice(0, 6);
+      .slice(0, 8);
   }, [draft.city, remoteCitySuggestions]);
 
   const openEdit = () => {
@@ -166,6 +171,16 @@ export function ProfileScreen({
     setFormError("");
   };
 
+  const resolveItalianCity = async (city: string) => {
+    const visibleMatch = findMatchingCitySuggestion(city, filteredCitySuggestions);
+    if (visibleMatch) {
+      return visibleMatch;
+    }
+
+    const remoteSuggestions = await searchItalianCities(city).catch(() => []);
+    return findMatchingCitySuggestion(city, remoteSuggestions) ?? null;
+  };
+
   const toggleInterest = (interest: Category) => {
     setDraft((current) => ({
       ...current,
@@ -199,11 +214,19 @@ export function ProfileScreen({
     }
 
     setSaving(true);
+    const exactCity = await resolveItalianCity(normalizedCity);
+    if (!exactCity) {
+      setSaving(false);
+      setFormError("Seleziona una citta italiana dai suggerimenti.");
+      return;
+    }
+
     const result = await onUpdateProfile({
       ...draft,
       name: normalizedName,
-      city: normalizedCity,
-      bio: normalizedBio
+      city: exactCity.name,
+      bio: normalizedBio,
+      cityCoordinates: exactCity.coordinates
     });
     setSaving(false);
 
@@ -308,7 +331,7 @@ export function ProfileScreen({
                         <Ionicons color={colors.ink} name="globe-outline" size={17} />
                       </View>
                       <View style={styles.suggestionCopy}>
-                        <Text style={styles.suggestionTitle}>Cerco in tutto il mondo...</Text>
+                        <Text style={styles.suggestionTitle}>Cerco citta italiane...</Text>
                         <Text style={styles.suggestionMeta}>OpenStreetMap</Text>
                       </View>
                     </View>

@@ -30,7 +30,15 @@ type PhotonResponse = {
 };
 
 const photonEndpoint = "https://photon.komoot.io/api/";
+const photonReverseEndpoint = "https://photon.komoot.io/reverse";
 const cityOsmValues = new Set(["city", "town", "village", "hamlet", "municipality"]);
+const cityOsmTags = [...cityOsmValues].map((value) => `place:${value}`);
+const italyBoundingBox = {
+  maxLatitude: 47.1,
+  maxLongitude: 18.99,
+  minLatitude: 35.49,
+  minLongitude: 6.62
+};
 
 function compact(parts: Array<string | undefined>) {
   return parts.map((part) => part?.trim()).filter((part): part is string => Boolean(part));
@@ -54,17 +62,53 @@ function coordinatesFromFeature(feature: PhotonFeature): Coordinates | null {
   return { latitude, longitude };
 }
 
-async function searchPhoton(query: string, limit: number, origin?: Coordinates) {
+function isWithinItalyBounds(coordinates: Coordinates) {
+  return (
+    coordinates.latitude >= italyBoundingBox.minLatitude &&
+    coordinates.latitude <= italyBoundingBox.maxLatitude &&
+    coordinates.longitude >= italyBoundingBox.minLongitude &&
+    coordinates.longitude <= italyBoundingBox.maxLongitude
+  );
+}
+
+function isItalyCountry(country?: string) {
+  const normalized = country?.trim().toLowerCase();
+  return normalized === "italia" || normalized === "italy";
+}
+
+function isFeatureInItaly(feature: PhotonFeature) {
+  const props = feature.properties ?? {};
+  const coordinates = coordinatesFromFeature(feature);
+  return Boolean(coordinates && isWithinItalyBounds(coordinates) && isItalyCountry(props.country));
+}
+
+type PhotonSearchOptions = {
+  origin?: Coordinates;
+  osmTags?: string[];
+};
+
+async function searchPhoton(query: string, limit: number, options: PhotonSearchOptions = {}) {
   const params = new URLSearchParams({
-    lang: "en",
     limit: String(limit),
     q: query
   });
 
-  if (origin) {
-    params.set("lat", String(origin.latitude));
-    params.set("lon", String(origin.longitude));
+  params.set(
+    "bbox",
+    [
+      italyBoundingBox.minLongitude,
+      italyBoundingBox.minLatitude,
+      italyBoundingBox.maxLongitude,
+      italyBoundingBox.maxLatitude
+    ].join(",")
+  );
+
+  if (options.origin && isWithinItalyBounds(options.origin)) {
+    params.set("lat", String(options.origin.latitude));
+    params.set("lon", String(options.origin.longitude));
   }
+
+  options.osmTags?.forEach((tag) => params.append("osm_tag", tag));
 
   const response = await fetch(`${photonEndpoint}?${params.toString()}`, {
     headers: { Accept: "application/json" }
@@ -72,6 +116,25 @@ async function searchPhoton(query: string, limit: number, origin?: Coordinates) 
 
   if (!response.ok) {
     throw new Error("Geocoding request failed");
+  }
+
+  const payload = (await response.json()) as PhotonResponse;
+  return payload.features ?? [];
+}
+
+async function reversePhoton(coordinates: Coordinates, limit = 5) {
+  const params = new URLSearchParams({
+    lat: String(coordinates.latitude),
+    limit: String(limit),
+    lon: String(coordinates.longitude)
+  });
+
+  const response = await fetch(`${photonReverseEndpoint}?${params.toString()}`, {
+    headers: { Accept: "application/json" }
+  });
+
+  if (!response.ok) {
+    throw new Error("Reverse geocoding request failed");
   }
 
   const payload = (await response.json()) as PhotonResponse;
@@ -89,7 +152,7 @@ function cityFromFeature(feature: PhotonFeature): CitySuggestion | null {
   return {
     coordinates,
     name,
-    province: unique(compact([props.state, props.country])).join(", ") || "Mondo"
+    province: unique(compact([props.county, props.state, props.country])).join(", ") || "Italia"
   };
 }
 
@@ -102,7 +165,7 @@ function placeFromFeature(feature: PhotonFeature, origin?: Coordinates): PlaceSu
   }
 
   const streetLine = compact([props.street, props.housenumber]).join(" ");
-  const city = props.city ?? props.county ?? props.state ?? props.country ?? "";
+  const city = props.city ?? props.district ?? props.county ?? props.state ?? "";
   const addressParts = unique(compact([streetLine, props.postcode, city, props.state, props.country]));
 
   return {
@@ -132,27 +195,57 @@ function isCityLike(feature: PhotonFeature) {
 }
 
 export async function searchCitiesWorldwide(query: string): Promise<CitySuggestion[]> {
+  return searchItalianCities(query);
+}
+
+export async function searchItalianCities(query: string): Promise<CitySuggestion[]> {
   const normalized = query.trim();
   if (normalized.length < 2) {
     return [];
   }
 
-  const features = await searchPhoton(normalized, 12);
-  const cityLike = features.filter(isCityLike).map(cityFromFeature).filter((item): item is CitySuggestion => item !== null);
-  const fallback = features.map(cityFromFeature).filter((item): item is CitySuggestion => item !== null);
+  const features = await searchPhoton(normalized, 24, { osmTags: cityOsmTags });
+  const cityLike = features
+    .filter((feature) => isFeatureInItaly(feature) && isCityLike(feature))
+    .map(cityFromFeature)
+    .filter((item): item is CitySuggestion => item !== null);
 
-  return dedupeByKey([...cityLike, ...fallback], (item) => `${item.name}-${item.province}`).slice(0, 6);
+  return dedupeByKey(cityLike, (item) => `${item.name}-${item.province}`).slice(0, 8);
 }
 
 export async function searchPlacesWorldwide(query: string, origin?: Coordinates): Promise<PlaceSuggestion[]> {
+  return searchItalianPlaces(query, origin);
+}
+
+export async function searchItalianPlaces(query: string, origin?: Coordinates): Promise<PlaceSuggestion[]> {
   const normalized = query.trim();
   if (normalized.length < 2) {
     return [];
   }
 
-  const features = await searchPhoton(normalized, 8, origin);
+  const features = await searchPhoton(normalized, 24, { origin });
   return dedupeByKey(
-    features.map((feature) => placeFromFeature(feature, origin)).filter((item): item is PlaceSuggestion => item !== null),
+    features
+      .filter(isFeatureInItaly)
+      .map((feature) => placeFromFeature(feature, origin))
+      .filter((item): item is PlaceSuggestion => item !== null),
     (item) => `${item.name}-${item.address}`
-  ).slice(0, 6);
+  ).slice(0, 8);
+}
+
+export async function reverseGeocodeItalianPlace(
+  coordinates: Coordinates,
+  origin?: Coordinates
+): Promise<PlaceSuggestion | null> {
+  if (!isWithinItalyBounds(coordinates)) {
+    return null;
+  }
+
+  const features = await reversePhoton(coordinates, 5);
+  const [place] = features
+    .filter(isFeatureInItaly)
+    .map((feature) => placeFromFeature(feature, origin))
+    .filter((item): item is PlaceSuggestion => item !== null);
+
+  return place ?? null;
 }

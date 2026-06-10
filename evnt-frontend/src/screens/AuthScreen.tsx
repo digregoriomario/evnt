@@ -16,7 +16,7 @@ import { DateTimePickerField } from "../components/DateTimePickerField";
 import { FormField } from "../components/FormField";
 import { ProfileImagePicker } from "../components/ProfileImagePicker";
 import { api, ApiError } from "../api";
-import { searchCitiesWorldwide } from "../api/geocoding";
+import { searchItalianCities } from "../api/geocoding";
 import { citySuggestions, type CitySuggestion } from "../data/cities";
 import { categories } from "../data/events";
 import { colors, radius, shadow, spacing } from "../theme";
@@ -90,6 +90,11 @@ function citySuggestionKey(suggestion: CitySuggestion, index: number) {
   ].join("-");
 }
 
+function findMatchingCitySuggestion(city: string, suggestions: CitySuggestion[]) {
+  const normalized = city.trim().toLowerCase();
+  return suggestions.find((suggestion) => suggestion.name.trim().toLowerCase() === normalized);
+}
+
 export function AuthScreen({ onComplete }: AuthScreenProps) {
   const [authView, setAuthView] = useState<"welcome" | "form">("welcome");
   const [mode, setMode] = useState<"signup" | "login">("signup");
@@ -136,7 +141,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
     let cancelled = false;
     setCitySearching(true);
     const timeout = setTimeout(() => {
-      searchCitiesWorldwide(normalized)
+      searchItalianCities(normalized)
         .then((suggestions) => {
           if (!cancelled) {
             setRemoteCitySuggestions(suggestions);
@@ -163,7 +168,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
   const filteredCitySuggestions = useMemo(() => {
     const normalized = city.trim().toLowerCase();
     if (normalized.length === 0) {
-      return citySuggestions.slice(0, 5);
+      return citySuggestions.slice(0, 8);
     }
 
     const localSuggestions = citySuggestions
@@ -180,7 +185,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
               item.province.toLowerCase() === suggestion.province.toLowerCase()
           ) === index
       )
-      .slice(0, 6);
+      .slice(0, 8);
   }, [city, remoteCitySuggestions]);
 
   const toggleInterest = (category: Category) => {
@@ -216,6 +221,25 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
     setSelectedCity(suggestion);
     clearFieldError("city");
     setCitySuggestionsOpen(false);
+  };
+
+  const resolveItalianCity = async () => {
+    const normalized = city.trim();
+    const selectedMatch =
+      selectedCity && selectedCity.name.trim().toLowerCase() === normalized.toLowerCase()
+        ? selectedCity
+        : undefined;
+    if (selectedMatch) {
+      return selectedMatch;
+    }
+
+    const visibleMatch = findMatchingCitySuggestion(normalized, filteredCitySuggestions);
+    if (visibleMatch) {
+      return visibleMatch;
+    }
+
+    const remoteSuggestions = await searchItalianCities(normalized).catch(() => []);
+    return findMatchingCitySuggestion(normalized, remoteSuggestions) ?? null;
   };
 
   const validateLogin = () => {
@@ -324,7 +348,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
     );
   };
 
-  const submitSignup = () => {
+  const submitSignup = async () => {
     if (submitting) return;
     const errors = {
       ...validateSignupStep(0),
@@ -340,14 +364,17 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
       }
       return;
     }
-    const exactCity =
-      selectedCity ??
-      filteredCitySuggestions.find((suggestion) => suggestion.name.toLowerCase() === city.trim().toLowerCase());
+    const exactCity = await resolveItalianCity();
+    if (!exactCity) {
+      showValidationErrors({ city: "Seleziona una citta italiana dai suggerimenti." });
+      setStep(1);
+      return;
+    }
     void submitAuth(
       {
         name: name.trim(),
         email: normalizedEmail(email),
-        city: city.trim(),
+        city: exactCity.name,
         cityCoordinates: exactCity?.coordinates,
         birthDate,
         bio: bio.trim(),
@@ -391,13 +418,25 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
       }
     }
 
+    if (step === 1) {
+      setSubmitting(true);
+      const exactCity = await resolveItalianCity();
+      setSubmitting(false);
+      if (!exactCity) {
+        showValidationErrors({ city: "Seleziona una citta italiana dai suggerimenti." });
+        return;
+      }
+      setCity(exactCity.name);
+      setSelectedCity(exactCity);
+    }
+
     if (step < 2) {
       setFormError("");
       setFieldErrors({});
       setStep((current) => current + 1);
       return;
     }
-    submitSignup();
+    void submitSignup();
   };
 
   const openSignup = () => {
@@ -620,7 +659,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
                               <Ionicons color={colors.ink} name="globe-outline" size={17} />
                             </View>
                             <View style={styles.suggestionCopy}>
-                              <Text style={styles.suggestionTitle}>Cerco in tutto il mondo...</Text>
+                              <Text style={styles.suggestionTitle}>Cerco citta italiane...</Text>
                               <Text style={styles.suggestionMeta}>OpenStreetMap</Text>
                             </View>
                           </View>
