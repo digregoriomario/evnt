@@ -1,6 +1,6 @@
 import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { categories } from "../data/events";
+import { categories as eventCategories } from "../data/events";
 import { colors, form, radius, spacing } from "../theme";
 import { Category, PriceFilter } from "../types";
 import { CategoryChip } from "./CategoryChip";
@@ -9,8 +9,7 @@ import { PillButton } from "./PillButton";
 import { SearchField } from "./SearchField";
 
 type MapFiltersModalProps = {
-  category: Category | "Tutti";
-  onCategoryChange: (category: Category | "Tutti") => void;
+  onCategoriesChange: (categories: Category[]) => void;
   onClose: () => void;
   onPriceChange: (price: PriceFilter) => void;
   onQueryChange: (query: string) => void;
@@ -21,6 +20,7 @@ type MapFiltersModalProps = {
   radiusDisabled?: boolean;
   radiusKm: number;
   radiusOptions: number[];
+  selectedCategories: Category[];
   showQueryField?: boolean;
   visible: boolean;
 };
@@ -28,8 +28,8 @@ type MapFiltersModalProps = {
 export type MapFiltersSheetProps = Omit<MapFiltersModalProps, "visible">;
 
 export function MapFiltersModal({
-  category,
-  onCategoryChange,
+  selectedCategories,
+  onCategoriesChange,
   onClose,
   onPriceChange,
   onQueryChange,
@@ -47,8 +47,8 @@ export function MapFiltersModal({
     <Modal animationType="slide" onRequestClose={onClose} transparent visible={visible}>
       <View style={styles.modalOverlay}>
         <MapFiltersSheet
-          category={category}
-          onCategoryChange={onCategoryChange}
+          selectedCategories={selectedCategories}
+          onCategoriesChange={onCategoriesChange}
           onClose={onClose}
           onPriceChange={onPriceChange}
           onQueryChange={onQueryChange}
@@ -67,8 +67,8 @@ export function MapFiltersModal({
 }
 
 export function MapFiltersSheet({
-  category,
-  onCategoryChange,
+  selectedCategories,
+  onCategoriesChange,
   onClose,
   onPriceChange,
   onQueryChange,
@@ -81,6 +81,13 @@ export function MapFiltersSheet({
   radiusOptions,
   showQueryField = true
 }: MapFiltersSheetProps) {
+  const toggleCategory = (item: Category) => {
+    const selected = selectedCategories.includes(item);
+    onCategoriesChange(
+      selected ? selectedCategories.filter((category) => category !== item) : [...selectedCategories, item]
+    );
+  };
+
   return (
     <View style={styles.filterSheet}>
       <View style={styles.sheetHeader}>
@@ -111,16 +118,16 @@ export function MapFiltersSheet({
           <PillButton
             accent="#5A4BC4"
             label="Tutte"
-            onPress={() => onCategoryChange("Tutti")}
-            selected={category === "Tutti"}
+            onPress={() => onCategoriesChange([])}
+            selected={selectedCategories.length === 0}
             soft="#F0EEFF"
           />
-          {categories.map((item) => (
+          {eventCategories.map((item) => (
             <CategoryChip
               category={item}
               key={item}
-              onPress={() => onCategoryChange(item)}
-              selected={category === item}
+              onPress={() => toggleCategory(item)}
+              selected={selectedCategories.includes(item)}
             />
           ))}
         </View>
@@ -255,6 +262,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: "row",
+    flexWrap: "wrap",
     gap: 2,
     padding: 3
   },
@@ -264,9 +272,11 @@ const styles = StyleSheet.create({
   segment: {
     alignItems: "center",
     borderRadius: radius.sm,
-    flex: 1,
+    flexBasis: "23%",
+    flexGrow: 1,
     justifyContent: "center",
     minHeight: 40,
+    minWidth: 66,
     paddingHorizontal: spacing.xs
   },
   segmentActive: {

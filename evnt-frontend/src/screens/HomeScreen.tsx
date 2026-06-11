@@ -210,8 +210,8 @@ export function HomeScreen({
       </ScrollView>
 
       <MapFiltersModal
-        category={filters.category}
-        onCategoryChange={(category) => onFiltersChange({ category })}
+        selectedCategories={filters.categories ?? []}
+        onCategoriesChange={(categories) => onFiltersChange({ categories })}
         onClose={() => setFiltersOpen(false)}
         onPriceChange={(price) => onFiltersChange({ price })}
         onQueryChange={(query) => onFiltersChange({ query })}

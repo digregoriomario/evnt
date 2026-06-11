@@ -21,6 +21,13 @@ function getWebStorage(): WebStorage | null {
   return (globalThis as unknown as { localStorage?: WebStorage }).localStorage ?? null;
 }
 
+function toStoredUser(user: UserProfile): UserProfile {
+  return {
+    ...user,
+    avatar: undefined
+  };
+}
+
 async function readSessionValue(): Promise<string | null> {
   if (Platform.OS === "web") {
     return getWebStorage()?.getItem(SESSION_KEY) ?? null;
@@ -60,6 +67,7 @@ export async function saveStoredSession(session: Omit<StoredSession, "savedAt">)
   await writeSessionValue(
     JSON.stringify({
       ...session,
+      user: toStoredUser(session.user),
       savedAt: new Date().toISOString()
     })
   );

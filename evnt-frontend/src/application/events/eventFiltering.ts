@@ -3,13 +3,13 @@ import { distanceBetweenKm } from "../../domain/geo/distance";
 import { Coordinates, EventFilterState, EvntEvent, LocationStatus, UserProfile } from "../../types";
 
 export const defaultEventFilters: EventFilterState = {
-  category: "Tutti",
+  categories: [],
   price: "tutti",
   query: "",
   radiusKm: 10
 };
 
-export const eventRadiusOptions = [0, 1, 3, 5, 10, 25] as const;
+export const eventRadiusOptions = [0, 1, 3, 5, 10, 25, 50, 100] as const;
 
 export const defaultMapCoordinates: Coordinates = {
   latitude: 40.6815,
@@ -44,8 +44,9 @@ export function getFallbackCoordinates(user: UserProfile): Coordinates {
 }
 
 export function getActiveEventFilterCount(filters: EventFilterState, radiusFilterEnabled = true) {
+  const selectedCategories = filters.categories ?? [];
   return (
-    (filters.category === "Tutti" ? 0 : 1) +
+    (selectedCategories.length === 0 ? 0 : 1) +
     (filters.price === "tutti" ? 0 : 1) +
     (filters.query.trim() ? 1 : 0) +
     (!radiusFilterEnabled || filters.radiusKm === defaultEventFilters.radiusKm ? 0 : 1)
@@ -70,10 +71,11 @@ export function buildEventFilterResult({
     distances[event.id] = distanceBetweenKm(radiusCenter, event.coordinates);
     return distances;
   }, {});
+  const categoryFilter = new Set(filters.categories ?? []);
 
   const eventsMatchingFilters = events
     .filter((event) => {
-      const matchesCategory = filters.category === "Tutti" || event.category === filters.category;
+      const matchesCategory = categoryFilter.size === 0 || categoryFilter.has(event.category);
       const matchesQuery =
         normalizedQuery.length === 0 ||
         event.title.toLowerCase().includes(normalizedQuery) ||

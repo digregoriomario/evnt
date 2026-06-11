@@ -85,7 +85,7 @@ function formatPrice(price: number) {
 }
 
 function formatSeats(event: EvntEvent) {
-  return event.capacity ? `${event.participants}/${event.capacity} posti` : "Posti illimitati";
+  return event.capacity ? `${event.participants}/${event.capacity} partecipanti` : `${event.participants} partecipanti`;
 }
 
 function radiusEventLabel(radiusKm: number) {
@@ -229,7 +229,7 @@ export function MapScreen({
       title: "Posizione non autorizzata"
     },
     granted: {
-      body: userCoordinates ? "La tua posizione e gli eventi sono sulla mappa reale." : "Posizione attiva.",
+      body: "Posizione attiva.",
       icon: "navigate" as const,
       title: "Geolocalizzazione attiva"
     },
@@ -244,6 +244,7 @@ export function MapScreen({
       title: "Posizione non disponibile"
     }
   }[locationStatus];
+  const showLocationStatusPanel = locationStatus !== "granted";
 
   const closeFullscreen = () => {
     setFullscreenOpen(false);
@@ -317,15 +318,17 @@ export function MapScreen({
           </View>
         )}
 
-        <View style={styles.locationPanel}>
-          <View style={styles.locationIcon}>
-            <Ionicons color={colors.ink} name={locationCopy.icon} size={20} />
+        {showLocationStatusPanel ? (
+          <View style={styles.locationPanel}>
+            <View style={styles.locationIcon}>
+              <Ionicons color={colors.ink} name={locationCopy.icon} size={20} />
+            </View>
+            <View style={styles.locationCopy}>
+              <Text style={styles.locationTitle}>{locationCopy.title}</Text>
+              <Text style={styles.locationText}>{locationCopy.body}</Text>
+            </View>
           </View>
-          <View style={styles.locationCopy}>
-            <Text style={styles.locationTitle}>{locationCopy.title}</Text>
-            <Text style={styles.locationText}>{locationCopy.body}</Text>
-          </View>
-        </View>
+        ) : null}
       </View>
 
       <Modal animationType="fade" onRequestClose={closeFullscreen} visible={fullscreenOpen}>
@@ -351,8 +354,8 @@ export function MapScreen({
           {filtersOpen && (
             <View style={styles.fullscreenFilterOverlay}>
               <MapFiltersSheet
-                category={filters.category}
-                onCategoryChange={(category) => onFiltersChange({ category })}
+                selectedCategories={filters.categories ?? []}
+                onCategoriesChange={(categories) => onFiltersChange({ categories })}
                 onClose={() => setFiltersOpen(false)}
                 onPriceChange={(price) => onFiltersChange({ price })}
                 onQueryChange={(query) => onFiltersChange({ query })}
@@ -370,8 +373,8 @@ export function MapScreen({
       </Modal>
 
       <MapFiltersModal
-        category={filters.category}
-        onCategoryChange={(category) => onFiltersChange({ category })}
+        selectedCategories={filters.categories ?? []}
+        onCategoriesChange={(categories) => onFiltersChange({ categories })}
         onClose={() => setFiltersOpen(false)}
         onPriceChange={(price) => onFiltersChange({ price })}
         onQueryChange={(query) => onFiltersChange({ query })}
@@ -680,7 +683,7 @@ function PoiPreviewCard({
         >
           <Ionicons
             color={favorite ? colors.teal : colors.ink}
-            name={favorite ? "heart" : "heart-outline"}
+            name={favorite ? "star" : "star-outline"}
             size={19}
           />
         </Pressable>

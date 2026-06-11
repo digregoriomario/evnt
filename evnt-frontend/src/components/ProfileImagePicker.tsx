@@ -65,7 +65,7 @@ const styles = StyleSheet.create({
   preview: {
     alignItems: "center",
     backgroundColor: colors.tealSoft,
-    borderRadius: radius.md,
+    borderRadius: 29,
     height: 58,
     justifyContent: "center",
     overflow: "hidden",
