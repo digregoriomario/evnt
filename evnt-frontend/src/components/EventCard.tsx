@@ -137,7 +137,6 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
-    flexDirection: "row",
     marginBottom: spacing.lg,
     overflow: "hidden",
     ...shadow
@@ -147,13 +146,12 @@ const styles = StyleSheet.create({
   },
   imageButton: {
     backgroundColor: colors.surfaceMuted,
-    minHeight: 148,
+    height: 152,
     position: "relative",
-    width: 124
+    width: "100%"
   },
   compactImageButton: {
-    minHeight: 112,
-    width: 96
+    height: 116
   },
   image: {
     backgroundColor: colors.surfaceMuted,
