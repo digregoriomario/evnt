@@ -36,7 +36,7 @@ export function EventCard({
   const categoryLabel = getEventSubcategoryLabel(event);
   const seatsLabel = event.capacity
     ? `${event.participants}/${event.capacity}`
-    : `${event.participants}+`;
+    : `${event.participants}`;
   const priceLabel = event.price === 0 ? "Gratis" : `EUR ${event.price}`;
 
   return (
@@ -72,7 +72,7 @@ export function EventCard({
           >
             <Ionicons
               color={favorite ? colors.teal : colors.ink}
-              name={favorite ? "heart" : "heart-outline"}
+              name={favorite ? "star" : "star-outline"}
               size={20}
             />
           </Pressable>
@@ -107,7 +107,7 @@ export function EventCard({
             <View style={styles.footer}>
               <View style={styles.footerMetrics}>
                 <Metric value={`${event.affinity}%`} label="affinita" />
-                <Metric value={seatsLabel} label="posti" />
+                <Metric value={seatsLabel} label="partecipanti" />
               </View>
               <View style={[styles.pricePill, registered && styles.registeredPill]}>
                 <Text style={[styles.priceLabel, registered && styles.registeredLabel]}>

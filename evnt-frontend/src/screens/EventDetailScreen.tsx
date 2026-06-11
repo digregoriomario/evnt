@@ -44,9 +44,12 @@ export function EventDetailScreen({
   const priceLabel = event.price === 0 ? "Gratis" : `EUR ${event.price}`;
   const seatsLabel = event.capacity
     ? `${event.participants}/${event.capacity}`
-    : `${event.participants}+`;
+    : `${event.participants}`;
+  const participantsMeta = event.capacity
+    ? `${seatsLabel} partecipanti`
+    : `${event.participants} ${event.participants === 1 ? "partecipante" : "partecipanti"}`;
   const isCancelled = event.status === "cancelled";
-  const ctaMeta = isCancelled ? "Evento non disponibile" : registered ? "Partecipazione confermata" : seatsLabel;
+  const ctaMeta = isCancelled ? "Evento non disponibile" : registered ? "Partecipazione confermata" : participantsMeta;
   const imageUri = getEventImage(event);
   const subcategoryLabel = getEventSubcategoryLabel(event);
   const openExternalMap = () => {
@@ -128,7 +131,7 @@ export function EventDetailScreen({
                 onPress={onToggleFavorite}
                 style={[styles.roundButton, isCancelled && styles.roundButtonDisabled]}
               >
-                <Ionicons color={favorite ? colors.primary : colors.ink} name={favorite ? "heart" : "heart-outline"} size={22} />
+                <Ionicons color={favorite ? colors.primary : colors.ink} name={favorite ? "star" : "star-outline"} size={22} />
               </Pressable>
             </View>
           </View>
@@ -163,7 +166,7 @@ export function EventDetailScreen({
 
           <View style={styles.infoGrid}>
             <InfoCell icon="calendar" label="Quando" value={`${event.date} · ${event.time}`} />
-            <InfoCell icon="users" label="Posti" value={seatsLabel} />
+            <InfoCell icon="users" label="Partecipanti" value={seatsLabel} />
             <InfoCell icon="credit-card" label="Costo" value={priceLabel} />
           </View>
 
@@ -189,11 +192,6 @@ export function EventDetailScreen({
             </View>
           </View>
 
-          <View style={styles.tags}>
-            {event.tags.map((tag) => (
-              <PillButton accent={colors.teal} key={tag} label={`#${tag}`} soft={colors.tealSoft} />
-            ))}
-          </View>
         </View>
       </ScrollView>
 

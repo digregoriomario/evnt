@@ -2,6 +2,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   KeyboardAvoidingView,
+  Image,
   Modal,
   Platform,
   Pressable,
@@ -51,6 +52,7 @@ type DisplayMessage = {
   senderEmail?: string;
   senderId?: string;
   senderName: string;
+  senderAvatar?: string;
   mine: boolean;
   pending?: boolean;
   failed?: boolean;
@@ -65,11 +67,13 @@ type DirectChat = {
   soft: string;
   city: string;
   interests: string[];
+  avatar?: string;
   userId?: number;
 };
 
 type ChatRowProps = {
   accent: string;
+  avatar?: string;
   icon?: keyof typeof Ionicons.glyphMap;
   iconText?: string;
   onPress: () => void;
@@ -97,6 +101,7 @@ function profileFromUser(user: UserSearchResult): DirectChat {
     soft: colors.surfaceMuted,
     city: user.city || "Citta non indicata",
     interests: [],
+    avatar: user.avatar,
     userId: user.id
   };
 }
@@ -109,6 +114,7 @@ function mapApiMessage(message: ChatMessage, user: UserProfile): DisplayMessage 
     senderEmail: message.sender.email,
     senderId: String(message.sender.id),
     senderName: message.sender.name,
+    senderAvatar: message.sender.image,
     mine: user.id ? message.sender.id === user.id : message.sender.name === user.name
   };
 }
@@ -123,6 +129,7 @@ function directChatFromConversation(conversation: DirectConversation): DirectCha
     soft: colors.surfaceMuted,
     city: conversation.participant.city || "Citta non indicata",
     interests: [],
+    avatar: conversation.participant.avatar,
     userId: conversation.participant.id
   };
 }
@@ -135,6 +142,7 @@ function mapApiDirectMessage(message: DirectMessage, user: UserProfile): Display
     senderEmail: message.sender.email,
     senderId: String(message.sender.id),
     senderName: message.sender.name,
+    senderAvatar: message.sender.avatar,
     mine: user.id ? message.sender.id === user.id : message.sender.email === user.email
   };
 }
@@ -306,6 +314,7 @@ export function InboxScreen({
     ? categorySoftColors[selectedEvent.category]
     : selectedDirect?.soft ?? colors.surfaceMuted;
   const selectedIconText = selectedEvent ? categoryEmojis[selectedEvent.category] : selectedDirect?.name.slice(0, 1);
+  const selectedAvatar = selectedEvent ? undefined : selectedDirect?.avatar;
   const organizerCanWrite =
     selectedEvent && selectedEvent.organizer.trim().toLowerCase() === user.name.trim().toLowerCase();
   const composerLocked = Boolean(selectedEvent?.chatMode === "Solo annunci" && !organizerCanWrite);
@@ -671,7 +680,8 @@ export function InboxScreen({
       accent: colors.primary,
       soft: colors.surfaceMuted,
       city: "Citta non indicata",
-      interests: []
+      interests: [],
+      avatar: message.senderAvatar
     };
   };
 
@@ -833,7 +843,11 @@ export function InboxScreen({
             <Ionicons color={colors.ink} name="chevron-back" size={24} />
           </Pressable>
           <View style={[styles.detailIcon, { backgroundColor: selectedSoft, borderColor: selectedAccent }]}>
-            <Text style={styles.detailIconText}>{selectedIconText}</Text>
+            {selectedAvatar ? (
+              <Image source={{ uri: selectedAvatar }} style={styles.avatarImage} />
+            ) : (
+              <Text style={styles.detailIconText}>{selectedIconText}</Text>
+            )}
           </View>
           <View style={styles.detailCopy}>
             <Text numberOfLines={1} style={styles.detailTitle}>{selectedTitle}</Text>
@@ -1021,6 +1035,7 @@ export function InboxScreen({
               <ChatRow
                 key={chat.id}
                 accent={chat.accent}
+                avatar={chat.avatar}
                 iconText={chat.name.slice(0, 1)}
                 onPress={() => openTarget({ type: "direct", id: chat.id })}
                 preview={preview}
@@ -1164,7 +1179,11 @@ function PersonRow({ actionLabel, chat, icon, onPress }: PersonRowProps) {
   return (
     <View style={styles.friendRow}>
       <View style={[styles.friendAvatar, { backgroundColor: chat.soft, borderColor: chat.accent }]}>
-        <Text style={[styles.friendAvatarText, { color: chat.accent }]}>{chat.name.slice(0, 1)}</Text>
+        {chat.avatar ? (
+          <Image source={{ uri: chat.avatar }} style={styles.avatarImage} />
+        ) : (
+          <Text style={[styles.friendAvatarText, { color: chat.accent }]}>{chat.name.slice(0, 1)}</Text>
+        )}
       </View>
       <View style={styles.friendCopy}>
         <Text style={styles.friendName}>{chat.name}</Text>
@@ -1186,6 +1205,7 @@ function PersonRow({ actionLabel, chat, icon, onPress }: PersonRowProps) {
 
 function ChatRow({
   accent,
+  avatar,
   icon,
   iconText,
   onPress,
@@ -1204,7 +1224,9 @@ function ChatRow({
       style={({ pressed }) => [styles.channel, pressed && styles.channelPressed]}
     >
       <View style={[styles.channelIcon, { backgroundColor: soft, borderColor: accent }]}>
-        {iconText ? (
+        {avatar ? (
+          <Image source={{ uri: avatar }} style={styles.avatarImage} />
+        ) : iconText ? (
           <Text style={styles.channelIconText}>{iconText}</Text>
         ) : (
           <Ionicons color={accent} name={icon ?? "chatbubble-ellipses-outline"} size={20} />
@@ -1341,11 +1363,16 @@ const styles = StyleSheet.create({
   },
   channelIcon: {
     alignItems: "center",
-    borderRadius: radius.md,
+    borderRadius: 24,
     borderWidth: 1,
     height: 48,
     justifyContent: "center",
+    overflow: "hidden",
     width: 48
+  },
+  avatarImage: {
+    height: "100%",
+    width: "100%"
   },
   channelIconText: {
     fontSize: 22,
@@ -1529,10 +1556,11 @@ const styles = StyleSheet.create({
   },
   friendAvatar: {
     alignItems: "center",
-    borderRadius: radius.sm,
+    borderRadius: 22,
     borderWidth: 1,
     height: 44,
     justifyContent: "center",
+    overflow: "hidden",
     width: 44
   },
   friendAvatarText: {
@@ -1598,10 +1626,11 @@ const styles = StyleSheet.create({
   },
   detailIcon: {
     alignItems: "center",
-    borderRadius: radius.md,
+    borderRadius: 21,
     borderWidth: 1,
     height: 42,
     justifyContent: "center",
+    overflow: "hidden",
     width: 42
   },
   detailIconText: {

@@ -395,7 +395,7 @@ export function ProfileScreen({
         </View>
         <View style={styles.profileCopy}>
           <Text style={styles.name}>{user.name}</Text>
-          <Text style={styles.meta}>{user.city} · 16+ verificato</Text>
+          <Text numberOfLines={1} style={styles.meta}>{user.email}</Text>
         </View>
         <View style={styles.headerActions}>
           <IconButton accessibilityLabel="Modifica profilo" icon="create-outline" iconSize={22} onPress={openEdit} />
@@ -420,7 +420,6 @@ export function ProfileScreen({
       <View style={styles.infoPanel}>
         <ProfileInfo icon="location-outline" label="Citta base" value={user.city} />
         <ProfileInfo icon="calendar-outline" label="Nascita" value={birthDateLabel} />
-        <ProfileInfo icon="sparkles-outline" label="Interessi" value={`${user.interests.length} attivi`} />
       </View>
 
       <View style={styles.eventSections}>
@@ -578,7 +577,7 @@ const styles = StyleSheet.create({
   avatar: {
     alignItems: "center",
     backgroundColor: colors.ink,
-    borderRadius: radius.md,
+    borderRadius: 32,
     height: 64,
     justifyContent: "center",
     overflow: "hidden",
@@ -594,9 +593,12 @@ const styles = StyleSheet.create({
     width: "100%"
   },
   profileCopy: {
-    flex: 1
+    alignSelf: "stretch",
+    flex: 1,
+    justifyContent: "center"
   },
   headerActions: {
+    alignSelf: "flex-start",
     flexDirection: "row",
     gap: spacing.sm
   },
@@ -607,15 +609,15 @@ const styles = StyleSheet.create({
   },
   meta: {
     color: colors.muted,
-    fontSize: 14,
+    fontSize: 13,
     fontWeight: "700",
     marginTop: 2
   },
   bio: {
     color: colors.muted,
-    fontSize: 15,
+    fontSize: 17,
     fontWeight: "600",
-    lineHeight: 22
+    lineHeight: 25
   },
   chips: {
     flexDirection: "row",

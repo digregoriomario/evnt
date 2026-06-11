@@ -15,6 +15,8 @@ import { InboxScreen } from "./src/screens/InboxScreen";
 import { MapScreen } from "./src/screens/MapScreen";
 import { ProfileScreen } from "./src/screens/ProfileScreen";
 import { useEventFilters } from "./src/presentation/hooks/useEventFilters";
+import { getFallbackCoordinates } from "./src/application/events/eventFiltering";
+import { distanceBetweenKm } from "./src/domain/geo/distance";
 import {
   addPushNotificationResponseListener,
   addPushTokenRefreshListener,
@@ -125,10 +127,37 @@ function AppContent() {
     () => events.find((event) => event.id === selectedEventId) ?? events[0],
     [events, selectedEventId]
   );
+  const distanceCenter = useMemo(() => {
+    if (!user) {
+      return null;
+    }
+
+    return locationStatus === "granted" && userCoordinates ? userCoordinates : getFallbackCoordinates(user);
+  }, [locationStatus, user, userCoordinates]);
+  const selectedEventWithCurrentDistance = useMemo(() => {
+    if (!selectedEvent || !distanceCenter) {
+      return selectedEvent;
+    }
+
+    return {
+      ...selectedEvent,
+      distanceKm: distanceBetweenKm(distanceCenter, selectedEvent.coordinates)
+    };
+  }, [distanceCenter, selectedEvent]);
   const visibleEvents = useMemo(
     () => events.filter((event) => event.status !== "cancelled"),
     [events]
   );
+  const visibleEventsWithCurrentDistance = useMemo(() => {
+    if (!distanceCenter) {
+      return visibleEvents;
+    }
+
+    return visibleEvents.map((event) => ({
+      ...event,
+      distanceKm: distanceBetweenKm(distanceCenter, event.coordinates)
+    }));
+  }, [distanceCenter, visibleEvents]);
 
   const activeMainScreen = mainScreens.includes(screen) ? screen : previousScreen;
   const showBottomNav = !sessionLoading && user !== null && mainScreens.includes(screen);
@@ -1045,19 +1074,19 @@ function AppContent() {
       );
     }
 
-    if (screen === "detail" && selectedEvent) {
+    if (screen === "detail" && selectedEventWithCurrentDistance) {
       return (
         <EventDetailScreen
-          canEdit={isOwnEvent(selectedEvent)}
-          event={selectedEvent}
-          favorite={favorites.has(selectedEvent.id)}
+          canEdit={isOwnEvent(selectedEventWithCurrentDistance)}
+          event={selectedEventWithCurrentDistance}
+          favorite={favorites.has(selectedEventWithCurrentDistance.id)}
           onBack={closeDetail}
-          onDelete={() => deleteEvent(selectedEvent)}
-          onEdit={() => editEvent(selectedEvent)}
-          onOpenChat={registrations.has(selectedEvent.id) ? () => openInbox(selectedEvent.id) : undefined}
-          onToggleFavorite={() => toggleFavorite(selectedEvent.id)}
-          onToggleRegistration={() => toggleRegistration(selectedEvent.id)}
-          registered={registrations.has(selectedEvent.id)}
+          onDelete={() => deleteEvent(selectedEventWithCurrentDistance)}
+          onEdit={() => editEvent(selectedEventWithCurrentDistance)}
+          onOpenChat={registrations.has(selectedEventWithCurrentDistance.id) ? () => openInbox(selectedEventWithCurrentDistance.id) : undefined}
+          onToggleFavorite={() => toggleFavorite(selectedEventWithCurrentDistance.id)}
+          onToggleRegistration={() => toggleRegistration(selectedEventWithCurrentDistance.id)}
+          registered={registrations.has(selectedEventWithCurrentDistance.id)}
         />
       );
     }
@@ -1116,7 +1145,7 @@ function AppContent() {
     if (screen === "profile") {
       return (
         <ProfileScreen
-          events={visibleEvents}
+          events={visibleEventsWithCurrentDistance}
           favorites={favorites}
           onLogout={logout}
           onOpenEvent={openEvent}

@@ -57,7 +57,7 @@ export type LocationStatus = "loading" | "granted" | "denied" | "unavailable";
 export type PriceFilter = "tutti" | "gratis" | "pagamento";
 
 export type EventFilterState = {
-  category: Category | "Tutti";
+  categories: Category[];
   price: PriceFilter;
   query: string;
   radiusKm: number;
