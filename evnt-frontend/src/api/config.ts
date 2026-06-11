@@ -6,7 +6,7 @@ import { Platform } from "react-native";
 // Defaults are sensible per-platform for local development:
 //  - web / iOS simulator: localhost
 //  - Android emulator: 10.0.2.2 maps to the host machine's localhost
-const backendPort = 4000;
+const backendPort = 8080;
 const apiPath = "/api";
 
 type ExpoRuntimeConstants = typeof Constants & {
@@ -78,14 +78,11 @@ function unique(values: Array<string | undefined>) {
 }
 
 const configuredBaseUrl = cleanBaseUrl(process.env.EXPO_PUBLIC_API_URL);
+const remoteUrl = `http://evnt.dedor.it:8080${apiPath}`;
 
 export const API_BASE_URLS = unique([
   configuredBaseUrl,
-  localHttpVariant(configuredBaseUrl),
-  baseUrlFromHost(expoDevHost()),
-  baseUrlFromHost(browserHost()),
-  Platform.OS === "android" ? `http://10.0.2.2:${backendPort}${apiPath}` : undefined,
-  `http://localhost:${backendPort}${apiPath}`
+  remoteUrl
 ]);
 
 export const API_BASE_URL = API_BASE_URLS[0];

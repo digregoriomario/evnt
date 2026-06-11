@@ -106,7 +106,7 @@ model Event {
   countryCode  String? @map("country_code") @db.VarChar(2)
   latitude    Float
   longitude   Float
-  geom        Unsupported("geometry(Point,4326)")? @default(dbgenerated("ST_SetSRID(ST_MakePoint(longitude, latitude), 4326)")) @map("geom")
+  geom        Unsupported("geometry(Point,4326)")? @map("geom")
   price       Decimal  @db.Decimal(10, 2) @default(0)
   maxSeats    Int?     @map("max_seats")
   categoryId  Int      @map("category_id")

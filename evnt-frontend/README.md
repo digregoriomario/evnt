@@ -1,4 +1,4 @@
-# Evnt 
+# Evnt
 
 Evnt è un progetto nato per riconnetterti con il tuo territorio e con le tue passioni. Trasformiamo la scoperta di un evento in partecipazione reale, abbattendo le barriere del disordine informativo per farti vivere solo le esperienze che ami davvero.
 
