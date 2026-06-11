@@ -1,11 +1,12 @@
-import { Ionicons } from "@expo/vector-icons";
-import { Modal, Pressable, StyleSheet, Text, TextInput, View } from "react-native";
+import { Modal, Pressable, StyleSheet, Text, View } from "react-native";
 
 import { categories } from "../data/events";
 import { colors, form, radius, spacing } from "../theme";
 import { Category, PriceFilter } from "../types";
 import { CategoryChip } from "./CategoryChip";
+import { IconButton } from "./IconButton";
 import { PillButton } from "./PillButton";
+import { SearchField } from "./SearchField";
 
 type MapFiltersModalProps = {
   category: Category | "Tutti";
@@ -76,41 +77,22 @@ export function MapFiltersSheet({
     <View style={styles.filterSheet}>
       <View style={styles.sheetHeader}>
         <Text style={styles.sheetTitle}>Filtri</Text>
-        <Pressable
+        <IconButton
           accessibilityLabel="Chiudi filtri"
-          accessibilityRole="button"
-          hitSlop={8}
+          icon="close"
+          iconSize={22}
           onPress={onClose}
-          style={styles.closeButton}
-        >
-          <Ionicons color={colors.ink} name="close" size={22} />
-        </Pressable>
+        />
       </View>
 
       <View style={styles.filterSection}>
         <Text style={styles.filterLabel}>Ricerca</Text>
-        <View style={styles.searchInputWrap}>
-          <Ionicons color={colors.muted} name="search-outline" size={19} />
-          <TextInput
-            accessibilityLabel="Cerca nei filtri"
-            autoCapitalize="none"
-            onChangeText={onQueryChange}
-            placeholder="Titolo, luogo o citta"
-            placeholderTextColor={colors.muted}
-            style={styles.searchInput}
-            value={query}
-          />
-          {query.length > 0 ? (
-            <Pressable
-              accessibilityLabel="Cancella ricerca"
-              accessibilityRole="button"
-              hitSlop={8}
-              onPress={() => onQueryChange("")}
-            >
-              <Ionicons color={colors.muted} name="close-circle" size={20} />
-            </Pressable>
-          ) : null}
-        </View>
+        <SearchField
+          accessibilityLabel="Cerca nei filtri"
+          onChangeText={onQueryChange}
+          placeholder="Titolo, luogo o citta"
+          value={query}
+        />
       </View>
 
       <View style={styles.filterSection}>
@@ -218,14 +200,6 @@ function FilterOption({ label, onPress, selected }: FilterOptionProps) {
 }
 
 const styles = StyleSheet.create({
-  closeButton: {
-    alignItems: "center",
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 18,
-    height: 36,
-    justifyContent: "center",
-    width: 36
-  },
   filterLabel: {
     ...form.label
   },
@@ -248,24 +222,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     flexWrap: "wrap",
     gap: spacing.sm
-  },
-  searchInput: {
-    color: colors.ink,
-    flex: 1,
-    fontSize: 16,
-    fontWeight: "700",
-    minHeight: 54
-  },
-  searchInputWrap: {
-    alignItems: "center",
-    backgroundColor: colors.surfaceMuted,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 56,
-    paddingHorizontal: spacing.md
   },
   segmented: {
     backgroundColor: colors.surfaceMuted,

@@ -24,6 +24,7 @@ import {
   type UserSearchResult
 } from "../api";
 import { categoryColors, categoryEmojis, categorySoftColors, getEventSubcategoryLabel } from "../data/events";
+import { SearchField } from "../components/SearchField";
 import { PillButton } from "../components/PillButton";
 import { colors, radius, shadow, spacing } from "../theme";
 import { EvntEvent, UserProfile } from "../types";
@@ -967,21 +968,12 @@ export function InboxScreen({
           </View>
         </View>
 
-        <View style={styles.searchBox}>
-          <Ionicons color={colors.muted} name="search-outline" size={20} />
-          <TextInput
-            onChangeText={setSearch}
-            placeholder="Cerca chat o persone"
-            placeholderTextColor={colors.muted}
-            style={styles.searchInput}
-            value={search}
-          />
-          {search ? (
-            <Pressable accessibilityLabel="Cancella ricerca" accessibilityRole="button" onPress={() => setSearch("")}>
-              <Ionicons color={colors.muted} name="close-circle" size={20} />
-            </Pressable>
-          ) : null}
-        </View>
+        <SearchField
+          accessibilityLabel="Cerca chat o persone"
+          onChangeText={setSearch}
+          placeholder="Cerca chat o persone"
+          value={search}
+        />
 
         <Pressable
           accessibilityLabel="Avvia chat cercando una persona tramite email"
@@ -1289,24 +1281,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "600",
     marginTop: 2
-  },
-  searchBox: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    paddingHorizontal: spacing.md,
-    ...shadow
-  },
-  searchInput: {
-    color: colors.ink,
-    flex: 1,
-    fontSize: 14,
-    fontWeight: "700",
-    minHeight: 48
   },
   friendShortcut: {
     alignItems: "center",

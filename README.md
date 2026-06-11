@@ -22,54 +22,76 @@ L'applicazione è rivolta a un target **16+**, con eventi caratterizzati e filtr
 Consulta la documentazione strategica completa:
 👉 **[Documentazione su Google Drive](https://drive.google.com/drive/folders/1rA5eZXwl1qi7YixnvFl7J1aURynljoFk?usp=drive_link)**
 
-## Avvio dell'app
+## Avvio dell'app da zero
+
+Queste istruzioni sono pensate per una persona che ha appena clonato la repository.
 
 ### Prerequisiti
 
-- Node.js LTS 20, 22 o 24. Evitare Node 25 perché non è supportato dagli script del progetto.
-- Docker Desktop avviato, necessario per PostgreSQL + PostGIS.
-- Expo Go su smartphone oppure Xcode Simulator / Android Emulator per avviare l'app mobile.
+- Node.js LTS 20, 22 o 24 consigliato. Se compaiono warning con versioni non LTS, usare Node 24.
+- npm, incluso con Node.js.
+- Docker Desktop avviato, necessario per backend, PostgreSQL e PostGIS.
+- Expo Go su smartphone, oppure Xcode Simulator per iOS, oppure Android Emulator.
 
-### Primo avvio del backend
+Clonare la repository e entrare nella cartella del progetto:
 
-Aprire un terminale dalla cartella principale del progetto:
+```bash
+git clone <URL_DELLA_REPOSITORY>
+cd Evnt
+```
+
+### Primo avvio backend
+
+Il backend è il primo servizio da avviare. Con Docker vengono creati automaticamente API, database PostgreSQL/PostGIS, Nginx, schema Prisma, catalogo e account demo.
+
+Da un terminale:
 
 ```bash
 cd evnt-backend
-cp .env.example .env
-npm install
-npm run db:up
-npm run prisma:generate
-npm run db:setup
-npm run seed
-npm run seed:demo
-npm run dev
+docker compose up -d --build
 ```
 
-Il backend sarà disponibile su `http://localhost:4000/api`.
+Controllare che sia tutto attivo:
 
-Il seed resetta i dati applicativi locali e carica solo il catalogo di interessi e categorie. Il comando `seed:demo` crea due utenti di test, senza eventi o messaggi precompilati.
+```bash
+docker compose ps
+curl http://localhost:4000/api/health
+```
 
-Credenziali demo:
+La risposta dell'healthcheck deve contenere:
+
+```json
+{
+  "status": "ok"
+}
+```
+
+Endpoint disponibili:
+
+```text
+Backend API: http://localhost:4000/api
+Nginx/proxy: http://localhost:8080
+Database:    localhost:5433
+```
+
+Account demo creati automaticamente:
 
 ```text
 demo1@evnt.app / password123
 demo2@evnt.app / password123
 ```
 
-Nota: il file `.env` contiene configurazioni locali e non deve essere pushato su GitHub.
-
-### Avvio del frontend
+### Primo avvio frontend
 
 Aprire un secondo terminale dalla cartella principale del progetto:
 
 ```bash
 cd evnt-frontend
-npm install
+npm ci
 npm start
 ```
 
-Da Expo si può poi scegliere dove aprire l'app. In alternativa:
+Da Expo si può scegliere dove aprire l'app. In alternativa:
 
 ```bash
 npm run ios
@@ -77,35 +99,135 @@ npm run android
 npm run web
 ```
 
-Su iOS Simulator e web il frontend usa automaticamente `http://localhost:4000/api`.
-Su Android Emulator usa automaticamente `http://10.0.2.2:4000/api`.
+URL backend usato dal frontend:
 
-Se l'app viene aperta da uno smartphone fisico, impostare l'URL del backend con l'IP locale del computer:
+- Web e iOS Simulator: `http://localhost:4000/api`
+- Android Emulator: `http://10.0.2.2:4000/api`
+- Smartphone fisico: Expo prova a usare l'IP locale del computer; se non funziona, impostarlo manualmente.
+
+Per avviare Expo su smartphone fisico indicando l'IP del computer:
 
 ```bash
 EXPO_PUBLIC_API_URL=http://TUO_IP_LOCALE:4000/api npm start
 ```
 
+Esempio:
+
+```bash
+EXPO_PUBLIC_API_URL=http://192.168.1.25:4000/api npm start
+```
+
+Telefono e computer devono essere collegati alla stessa rete Wi-Fi.
+
 ### Avvii successivi
 
-Dopo il primo setup, bastano due terminali:
+Backend:
 
 ```bash
 cd evnt-backend
-npm run db:up
-npm run dev
+docker compose up -d
 ```
+
+Frontend:
 
 ```bash
 cd evnt-frontend
 npm start
 ```
 
-Per spegnere il database:
+### Comandi utili backend
+
+Vedere lo stato dei container:
 
 ```bash
 cd evnt-backend
-npm run db:down
+docker compose ps
+```
+
+Vedere i log dell'API:
+
+```bash
+cd evnt-backend
+docker compose logs -f api
+```
+
+Riavviare il backend dopo modifiche al codice:
+
+```bash
+cd evnt-backend
+docker compose restart api
+```
+
+Ricostruire il backend dopo modifiche a dipendenze, Dockerfile o package:
+
+```bash
+cd evnt-backend
+docker compose up -d --build
+```
+
+Spegnere backend e proxy, lasciando acceso il database:
+
+```bash
+cd evnt-backend
+docker compose stop api nginx
+```
+
+Spegnere tutto:
+
+```bash
+cd evnt-backend
+docker compose down
+```
+
+Ripartire da un database vuoto, cancellando anche il volume locale:
+
+```bash
+cd evnt-backend
+docker compose down -v
+docker compose up -d --build
+```
+
+### Se la porta 4000 è occupata
+
+Controllare chi usa la porta:
+
+```bash
+lsof -nP -iTCP:4000 -sTCP:LISTEN
+```
+
+Se la porta è occupata da Docker, fermare il container API:
+
+```bash
+cd evnt-backend
+docker compose stop api nginx
+```
+
+Se resta occupata, controllare i container attivi:
+
+```bash
+docker ps
+docker stop evnt-api
+```
+
+### Avvio backend senza Docker API
+
+Questa modalità è utile solo per sviluppo locale del backend. Il database resta comunque su Docker.
+
+```bash
+cd evnt-backend
+cp .env.example .env
+npm ci
+docker compose up -d db
+npm run prisma:generate
+npm run db:setup
+npm run bootstrap
+npm run dev
+```
+
+Se il container `evnt-api` è già attivo, fermarlo prima perché usa la porta `4000`:
+
+```bash
+docker compose stop api nginx
 ```
 
 

@@ -94,6 +94,7 @@ function isFeatureInItaly(feature: PhotonFeature) {
 type PhotonSearchOptions = {
   origin?: Coordinates;
   osmTags?: string[];
+  worldwide?: boolean;
 };
 
 async function searchPhoton(query: string, limit: number, options: PhotonSearchOptions = {}) {
@@ -102,17 +103,19 @@ async function searchPhoton(query: string, limit: number, options: PhotonSearchO
     q: query
   });
 
-  params.set(
-    "bbox",
-    [
-      italyBoundingBox.minLongitude,
-      italyBoundingBox.minLatitude,
-      italyBoundingBox.maxLongitude,
-      italyBoundingBox.maxLatitude
-    ].join(",")
-  );
+  if (!options.worldwide) {
+    params.set(
+      "bbox",
+      [
+        italyBoundingBox.minLongitude,
+        italyBoundingBox.minLatitude,
+        italyBoundingBox.maxLongitude,
+        italyBoundingBox.maxLatitude
+      ].join(",")
+    );
+  }
 
-  if (options.origin && isWithinItalyBounds(options.origin)) {
+  if (options.origin) {
     params.set("lat", String(options.origin.latitude));
     params.set("lon", String(options.origin.longitude));
   }
@@ -212,7 +215,18 @@ function isCityLike(feature: PhotonFeature) {
 }
 
 export async function searchCitiesWorldwide(query: string): Promise<CitySuggestion[]> {
-  return searchItalianCities(query);
+  const normalized = query.trim();
+  if (normalized.length < 2) {
+    return [];
+  }
+
+  const features = await searchPhoton(normalized, 24, { osmTags: cityOsmTags, worldwide: true });
+  const cityLike = features
+    .filter(isCityLike)
+    .map(cityFromFeature)
+    .filter((item): item is CitySuggestion => item !== null);
+
+  return dedupeByKey(cityLike, (item) => `${item.name}-${item.province}`).slice(0, 8);
 }
 
 export async function searchItalianCities(query: string): Promise<CitySuggestion[]> {
@@ -231,7 +245,18 @@ export async function searchItalianCities(query: string): Promise<CitySuggestion
 }
 
 export async function searchPlacesWorldwide(query: string, origin?: Coordinates): Promise<PlaceSuggestion[]> {
-  return searchItalianPlaces(query, origin);
+  const normalized = query.trim();
+  if (normalized.length < 2) {
+    return [];
+  }
+
+  const features = await searchPhoton(normalized, 24, { origin, worldwide: true });
+  return dedupeByKey(
+    features
+      .map((feature) => placeFromFeature(feature, origin))
+      .filter((item): item is PlaceSuggestion => item !== null),
+    (item) => `${item.name}-${item.address}`
+  ).slice(0, 8);
 }
 
 export async function searchItalianPlaces(query: string, origin?: Coordinates): Promise<PlaceSuggestion[]> {
@@ -261,6 +286,18 @@ export async function reverseGeocodeItalianPlace(
   const features = await reversePhoton(coordinates, 5);
   const [place] = features
     .filter(isFeatureInItaly)
+    .map((feature) => placeFromFeature(feature, origin))
+    .filter((item): item is PlaceSuggestion => item !== null);
+
+  return place ?? null;
+}
+
+export async function reverseGeocodeWorldwide(
+  coordinates: Coordinates,
+  origin?: Coordinates
+): Promise<PlaceSuggestion | null> {
+  const features = await reversePhoton(coordinates, 5);
+  const [place] = features
     .map((feature) => placeFromFeature(feature, origin))
     .filter((item): item is PlaceSuggestion => item !== null);
 

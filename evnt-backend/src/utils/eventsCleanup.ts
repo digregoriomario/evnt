@@ -24,15 +24,20 @@ export async function closeExpiredEvents(now = eventCleanupNow()) {
 }
 
 export function startExpiredEventsCleanup() {
-  void closeExpiredEvents().catch((error) => {
-    console.error("Failed to close expired events", error);
-  });
+  void runExpiredEventsCleanup();
 
   const timer = setInterval(() => {
-    void closeExpiredEvents().catch((error) => {
-      console.error("Failed to close expired events", error);
-    });
+    void runExpiredEventsCleanup();
   }, cleanupIntervalMs);
 
   return () => clearInterval(timer);
+}
+
+async function runExpiredEventsCleanup() {
+  try {
+    await closeExpiredEvents();
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Errore sconosciuto";
+    console.warn(`Pulizia eventi scaduti saltata: ${message}`);
+  }
 }

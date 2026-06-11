@@ -425,21 +425,27 @@ export async function runScheduledEventNotifications(now = eventCleanupNow()) {
 }
 
 export function startScheduledNotifications() {
-  void cleanupOldNotifications().catch((error) => {
-    console.error("Failed to clean old notifications", error);
-  });
-  void runScheduledEventNotifications().catch((error) => {
-    console.error("Failed to create scheduled notifications", error);
-  });
+  void runNotificationJobs();
 
   const timer = setInterval(() => {
-    void cleanupOldNotifications().catch((error) => {
-      console.error("Failed to clean old notifications", error);
-    });
-    void runScheduledEventNotifications().catch((error) => {
-      console.error("Failed to create scheduled notifications", error);
-    });
+    void runNotificationJobs();
   }, scheduledNotificationIntervalMs);
 
   return () => clearInterval(timer);
+}
+
+async function runNotificationJobs() {
+  const results = await Promise.allSettled([
+    cleanupOldNotifications(),
+    runScheduledEventNotifications()
+  ]);
+
+  results.forEach((result, index) => {
+    if (result.status === "fulfilled") {
+      return;
+    }
+    const label = index === 0 ? "pulizia notifiche" : "notifiche programmate";
+    const message = result.reason instanceof Error ? result.reason.message : "Errore sconosciuto";
+    console.warn(`Job ${label} saltato: ${message}`);
+  });
 }

@@ -1,4 +1,3 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useCallback, useMemo, useState } from "react";
 import {
   Platform,
@@ -7,15 +6,16 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View
 } from "react-native";
 
 import { EmptyState } from "../components/EmptyState";
 import { EventCard } from "../components/EventCard";
+import { IconButton } from "../components/IconButton";
 import { LocationFallbackBanner } from "../components/LocationFallbackBanner";
 import { MapFiltersModal } from "../components/MapFiltersModal";
 import { NotificationsModal } from "../components/NotificationsModal";
+import { SearchField } from "../components/SearchField";
 import { type Notification } from "../api";
 import { buildEventFilterResult, eventRadiusOptions } from "../application/events/eventFiltering";
 import { colors, radius, spacing } from "../theme";
@@ -108,19 +108,12 @@ export function HomeScreen({
       >
         <View style={styles.header}>
           <Text style={styles.title}>Ciao, {user.name}</Text>
-          <Pressable
+          <IconButton
             accessibilityLabel={`Notifiche${unreadNotifications > 0 ? `, ${unreadNotifications} da leggere` : ""}`}
-            accessibilityRole="button"
+            badgeCount={unreadNotifications}
+            icon="notifications-outline"
             onPress={() => setNotificationsOpen(true)}
-            style={styles.notificationButton}
-          >
-            <Ionicons color={colors.ink} name="notifications-outline" size={21} />
-            {unreadNotifications > 0 ? (
-              <View style={styles.notificationBadge}>
-                <Text style={styles.notificationBadgeText}>{Math.min(unreadNotifications, 9)}</Text>
-              </View>
-            ) : null}
-          </Pressable>
+          />
         </View>
 
         {showLocationFallbackNotice && (
@@ -128,41 +121,21 @@ export function HomeScreen({
         )}
 
         <View style={styles.searchRow}>
-          <View style={styles.searchBox}>
-            <Ionicons color={colors.muted} name="search-outline" size={20} />
-            <TextInput
-              accessibilityLabel="Cerca eventi"
-              autoCapitalize="none"
-              onChangeText={(query) => onFiltersChange({ query })}
-              placeholder="Cerca eventi"
-              placeholderTextColor={colors.muted}
-              style={styles.searchInput}
-              value={filters.query}
-            />
-            {filters.query.length > 0 && (
-              <Pressable
-                accessibilityLabel="Cancella ricerca"
-                accessibilityRole="button"
-                onPress={() => onFiltersChange({ query: "" })}
-              >
-                <Ionicons color={colors.muted} name="close-circle" size={20} />
-              </Pressable>
-            )}
-          </View>
+          <SearchField
+            accessibilityLabel="Cerca eventi"
+            onChangeText={(query) => onFiltersChange({ query })}
+            placeholder="Cerca eventi"
+            style={styles.searchField}
+            value={filters.query}
+          />
 
-          <Pressable
+          <IconButton
             accessibilityLabel="Filtri eventi"
-            accessibilityRole="button"
+            badgeCount={activeFilterCount}
+            icon="options-outline"
+            size="lg"
             onPress={() => setFiltersOpen(true)}
-            style={styles.filterButton}
-          >
-            <Ionicons color={colors.ink} name="options-outline" size={20} />
-              {activeFilterCount > 0 && (
-              <View style={styles.filterBadge}>
-                <Text style={styles.filterBadgeText}>{activeFilterCount}</Text>
-              </View>
-            )}
-          </Pressable>
+          />
         </View>
 
         <View style={styles.feedHeader}>
@@ -247,50 +220,6 @@ const styles = StyleSheet.create({
     justifyContent: "space-between",
     paddingTop: spacing.sm
   },
-  locationBanner: {
-    alignItems: "center",
-    backgroundColor: "#FFF7DF",
-    borderColor: "#F3D28A",
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    padding: spacing.md
-  },
-  locationBannerCopy: {
-    flex: 1,
-    gap: 2
-  },
-  locationBannerIcon: {
-    alignItems: "center",
-    backgroundColor: "#FFE9A8",
-    borderRadius: 18,
-    height: 36,
-    justifyContent: "center",
-    width: 36
-  },
-  locationBannerText: {
-    color: colors.muted,
-    fontSize: 12,
-    fontWeight: "700",
-    lineHeight: 17
-  },
-  locationBannerTitle: {
-    color: colors.ink,
-    fontSize: 14,
-    fontWeight: "900"
-  },
-  locationRetry: {
-    backgroundColor: colors.surface,
-    borderRadius: radius.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.xs
-  },
-  locationRetryText: {
-    color: colors.ink,
-    fontSize: 12,
-    fontWeight: "900"
-  },
   title: {
     color: colors.ink,
     flex: 1,
@@ -298,84 +227,14 @@ const styles = StyleSheet.create({
     fontWeight: "900",
     lineHeight: 36
   },
-  notificationButton: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    height: 44,
-    justifyContent: "center",
-    position: "relative",
-    width: 44
-  },
-  notificationBadge: {
-    alignItems: "center",
-    backgroundColor: colors.danger,
-    borderColor: colors.surface,
-    borderRadius: 9,
-    borderWidth: 1,
-    height: 18,
-    justifyContent: "center",
-    position: "absolute",
-    right: -4,
-    top: -4,
-    width: 18
-  },
-  notificationBadgeText: {
-    color: colors.surface,
-    fontSize: 10,
-    fontWeight: "900"
-  },
   searchRow: {
     alignItems: "center",
     flexDirection: "row",
     gap: spacing.sm
   },
-  searchBox: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    borderWidth: 1,
+  searchField: {
     flex: 1,
-    flexDirection: "row",
-    gap: spacing.sm,
-    minHeight: 52,
-    paddingHorizontal: spacing.md
-  },
-  searchInput: {
-    color: colors.ink,
-    flex: 1,
-    fontSize: 15,
-    fontWeight: "600"
-  },
-  filterButton: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    height: 52,
-    justifyContent: "center",
-    position: "relative",
-    width: 52
-  },
-  filterBadge: {
-    alignItems: "center",
-    backgroundColor: colors.teal,
-    borderRadius: 9,
-    height: 18,
-    justifyContent: "center",
-    position: "absolute",
-    right: 7,
-    top: 7,
-    width: 18
-  },
-  filterBadgeText: {
-    color: colors.surface,
-    fontSize: 11,
-    fontWeight: "900"
+    minHeight: 52
   },
   feedHeader: {
     alignItems: "center",
@@ -405,77 +264,4 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900"
   },
-  modalOverlay: {
-    backgroundColor: "rgba(17, 24, 39, 0.32)",
-    flex: 1,
-    justifyContent: "flex-end"
-  },
-  filterSheet: {
-    backgroundColor: colors.surface,
-    borderTopLeftRadius: 24,
-    borderTopRightRadius: 24,
-    gap: spacing.xl,
-    padding: spacing.xl
-  },
-  sheetHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between"
-  },
-  sheetTitle: {
-    color: colors.ink,
-    fontSize: 24,
-    fontWeight: "900"
-  },
-  closeButton: {
-    alignItems: "center",
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 18,
-    height: 36,
-    justifyContent: "center",
-    width: 36
-  },
-  filterSection: {
-    gap: spacing.md
-  },
-  filterLabel: {
-    color: colors.ink,
-    fontSize: 15,
-    fontWeight: "900"
-  },
-  optionGrid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    gap: spacing.sm
-  },
-  sheetActions: {
-    flexDirection: "row",
-    gap: spacing.md
-  },
-  secondaryAction: {
-    alignItems: "center",
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.md,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 50
-  },
-  secondaryActionText: {
-    color: colors.ink,
-    fontSize: 15,
-    fontWeight: "900"
-  },
-  primaryAction: {
-    alignItems: "center",
-    backgroundColor: colors.ink,
-    borderRadius: radius.md,
-    flex: 1,
-    justifyContent: "center",
-    minHeight: 50
-  },
-  primaryActionText: {
-    color: colors.surface,
-    fontSize: 15,
-    fontWeight: "900"
-  }
 });

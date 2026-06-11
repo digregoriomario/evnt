@@ -12,7 +12,7 @@ import {
   View
 } from "react-native";
 
-import { distanceBetweenKm, reverseGeocodeItalianPlace, searchItalianPlaces } from "../api/geocoding";
+import { distanceBetweenKm, reverseGeocodeWorldwide, searchPlacesWorldwide } from "../api/geocoding";
 import { DateTimePickerField } from "../components/DateTimePickerField";
 import { FormField } from "../components/FormField";
 import { PillButton } from "../components/PillButton";
@@ -263,7 +263,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     let cancelled = false;
     setPlaceSearching(true);
     const timeout = setTimeout(() => {
-      searchItalianPlaces(normalized, originCoordinates)
+      searchPlacesWorldwide(normalized, originCoordinates)
         .then((suggestions) => {
           if (!cancelled) {
             setRemotePlaceSuggestions(suggestions);
@@ -447,7 +447,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
       selectedPlace?.address === pendingMapAddressLabel ? null : selectedPlace;
 
     if (!resolvedPlace && manualCoordinates) {
-      resolvedPlace = await reverseGeocodeItalianPlace(manualCoordinates, originCoordinates).catch(() => null);
+      resolvedPlace = await reverseGeocodeWorldwide(manualCoordinates, originCoordinates).catch(() => null);
       if (resolvedPlace) {
         setSelectedPlace(resolvedPlace);
         setManualCoordinates(resolvedPlace.coordinates);
@@ -461,7 +461,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
       const [fallbackPlace] =
         filteredPlaceSuggestions.length > 0
           ? filteredPlaceSuggestions
-          : await searchItalianPlaces(normalizedAddress, originCoordinates).catch(() => []);
+          : await searchPlacesWorldwide(normalizedAddress, originCoordinates).catch(() => []);
       resolvedPlace = fallbackPlace ?? null;
 
       if (resolvedPlace) {
@@ -596,7 +596,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     const manualPlace: PlaceSuggestion = {
       address: pendingMapAddressLabel,
       city: user.city,
-      countryCode: "IT",
+      countryCode: undefined,
       coordinates,
       distanceKm: originCoordinates ? distanceBetweenKm(originCoordinates, coordinates) : 0,
       name: fallbackName
@@ -609,7 +609,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     clearFieldError("place");
     setReverseGeocoding(true);
 
-    void reverseGeocodeItalianPlace(coordinates, originCoordinates)
+    void reverseGeocodeWorldwide(coordinates, originCoordinates)
       .then((resolvedPlace) => {
         if (reverseLookupId.current !== lookupId) {
           return;
@@ -617,7 +617,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
 
         if (!resolvedPlace) {
           setSelectedPlace(null);
-          setFormError("Sposta il POI su un indirizzo in Italia.");
+          setFormError("Sposta il POI su un indirizzo valido o scegli un suggerimento.");
           return;
         }
 

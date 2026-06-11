@@ -16,7 +16,7 @@ import { DateTimePickerField } from "../components/DateTimePickerField";
 import { FormField } from "../components/FormField";
 import { ProfileImagePicker } from "../components/ProfileImagePicker";
 import { api, ApiError } from "../api";
-import { searchItalianCities } from "../api/geocoding";
+import { searchCitiesWorldwide } from "../api/geocoding";
 import { citySuggestions, type CitySuggestion } from "../data/cities";
 import { categories } from "../data/events";
 import { colors, radius, shadow, spacing } from "../theme";
@@ -141,7 +141,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
     let cancelled = false;
     setCitySearching(true);
     const timeout = setTimeout(() => {
-      searchItalianCities(normalized)
+      searchCitiesWorldwide(normalized)
         .then((suggestions) => {
           if (!cancelled) {
             setRemoteCitySuggestions(suggestions);
@@ -238,7 +238,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
       return visibleMatch;
     }
 
-    const remoteSuggestions = await searchItalianCities(normalized).catch(() => []);
+    const remoteSuggestions = await searchCitiesWorldwide(normalized).catch(() => []);
     return findMatchingCitySuggestion(normalized, remoteSuggestions) ?? null;
   };
 

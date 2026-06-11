@@ -5,7 +5,6 @@ import { prisma } from "../lib/prisma";
 import { asyncHandler, HttpError } from "../utils/http";
 import { authOptional, authRequired } from "../middleware/auth";
 import { publishToUser } from "../realtime";
-import { closeExpiredEvents } from "../utils/eventsCleanup";
 import {
   notifyCapacityMilestones,
   notifyChatMessage,
@@ -23,13 +22,6 @@ import {
 } from "../utils/serialize";
 
 export const eventsRouter = Router();
-
-eventsRouter.use(
-  asyncHandler(async (_req, _res, next) => {
-    await closeExpiredEvents();
-    next();
-  })
-);
 
 // Returns a map eventId -> distanceKm from a given point using PostGIS.
 async function distanceMap(lat: number, lng: number): Promise<Map<number, number>> {
@@ -113,26 +105,27 @@ async function findOrCreateCategory(name: string) {
   });
 }
 
-const italyBounds = {
-  maxLatitude: 47.1,
-  maxLongitude: 18.99,
-  minLatitude: 35.49,
-  minLongitude: 6.62
-};
-
 const optionalTrimmed = (max: number) => z.string().trim().min(1).max(max).optional();
 
 const latitudeSchema = z
   .number()
   .finite()
-  .min(italyBounds.minLatitude, "La latitudine deve essere in Italia")
-  .max(italyBounds.maxLatitude, "La latitudine deve essere in Italia");
+  .min(-90, "Latitudine non valida")
+  .max(90, "Latitudine non valida");
 
 const longitudeSchema = z
   .number()
   .finite()
-  .min(italyBounds.minLongitude, "La longitudine deve essere in Italia")
-  .max(italyBounds.maxLongitude, "La longitudine deve essere in Italia");
+  .min(-180, "Longitudine non valida")
+  .max(180, "Longitudine non valida");
+
+const countryCodeSchema = z
+  .string()
+  .trim()
+  .length(2, "Il codice paese deve avere 2 caratteri")
+  .refine((value) => /^[a-z]{2}$/i.test(value), "Codice paese non valido")
+  .transform((value) => value.toUpperCase())
+  .optional();
 
 function eventIdFromParams(value: string) {
   const id = Number(value);
@@ -301,13 +294,7 @@ const createSchema = z.object({
   province: optionalTrimmed(120),
   region: optionalTrimmed(120),
   postcode: optionalTrimmed(20),
-  countryCode: z
-    .string()
-    .trim()
-    .length(2)
-    .transform((value) => value.toUpperCase())
-    .refine((value) => value === "IT", "Sono ammessi solo indirizzi italiani")
-    .optional(),
+  countryCode: countryCodeSchema,
   latitude: latitudeSchema,
   longitude: longitudeSchema,
   price: z.number().finite().min(0).max(10000).default(0),
@@ -340,7 +327,7 @@ eventsRouter.post(
         province: body.province,
         region: body.region,
         postcode: body.postcode,
-        countryCode: body.countryCode ?? "IT",
+        countryCode: body.countryCode,
         latitude: body.latitude,
         longitude: body.longitude,
         price: body.price,

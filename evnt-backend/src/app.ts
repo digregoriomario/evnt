@@ -15,7 +15,9 @@ export function createApp() {
   );
   app.use(express.json({ limit: "8mb" }));
   app.use(express.urlencoded({ extended: true, limit: "8mb" }));
-  if (env.nodeEnv !== "test") app.use(morgan("dev"));
+  if (env.nodeEnv !== "test") {
+    app.use(morgan(":method :url :status :response-time ms - :res[content-length]"));
+  }
 
   app.use("/api", apiRouter);
 

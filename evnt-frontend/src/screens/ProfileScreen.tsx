@@ -15,8 +15,9 @@ import {
 import { CategoryChip } from "../components/CategoryChip";
 import { EventCard } from "../components/EventCard";
 import { FormField } from "../components/FormField";
+import { IconButton } from "../components/IconButton";
 import { ProfileImagePicker } from "../components/ProfileImagePicker";
-import { searchItalianCities } from "../api/geocoding";
+import { searchCitiesWorldwide } from "../api/geocoding";
 import { citySuggestions, type CitySuggestion } from "../data/cities";
 import { categories } from "../data/events";
 import { colors, radius, shadow, spacing } from "../theme";
@@ -91,7 +92,7 @@ export function ProfileScreen({
     let cancelled = false;
     setCitySearching(true);
     const timeout = setTimeout(() => {
-      searchItalianCities(normalized)
+      searchCitiesWorldwide(normalized)
         .then((suggestions) => {
           if (!cancelled) {
             setRemoteCitySuggestions(suggestions);
@@ -177,7 +178,7 @@ export function ProfileScreen({
       return visibleMatch;
     }
 
-    const remoteSuggestions = await searchItalianCities(city).catch(() => []);
+    const remoteSuggestions = await searchCitiesWorldwide(city).catch(() => []);
     return findMatchingCitySuggestion(city, remoteSuggestions) ?? null;
   };
 
@@ -257,9 +258,13 @@ export function ProfileScreen({
               <Text style={styles.sectionTitle}>Modifica profilo</Text>
               <Text style={styles.editSubtitle}>Aggiorna le informazioni con cui Evnt personalizza feed e mappa.</Text>
             </View>
-            <Pressable accessibilityLabel="Annulla modifica profilo" accessibilityRole="button" onPress={cancelEdit} style={styles.iconButton}>
-              <Ionicons color={colors.muted} name="close" size={22} />
-            </Pressable>
+            <IconButton
+              accessibilityLabel="Annulla modifica profilo"
+              icon="close"
+              iconColor={colors.muted}
+              iconSize={22}
+              onPress={cancelEdit}
+            />
           </View>
 
           {formError ? <Text style={styles.formErrorText}>{formError}</Text> : null}
@@ -393,12 +398,14 @@ export function ProfileScreen({
           <Text style={styles.meta}>{user.city} · 16+ verificato</Text>
         </View>
         <View style={styles.headerActions}>
-          <Pressable accessibilityLabel="Modifica profilo" accessibilityRole="button" onPress={openEdit} style={styles.iconButton}>
-            <Ionicons color={colors.ink} name="create-outline" size={22} />
-          </Pressable>
-          <Pressable accessibilityLabel="Logout" accessibilityRole="button" onPress={onLogout} style={styles.iconButton}>
-            <Ionicons color={colors.muted} name="log-out-outline" size={22} />
-          </Pressable>
+          <IconButton accessibilityLabel="Modifica profilo" icon="create-outline" iconSize={22} onPress={openEdit} />
+          <IconButton
+            accessibilityLabel="Logout"
+            icon="log-out-outline"
+            iconColor={colors.muted}
+            iconSize={22}
+            onPress={onLogout}
+          />
         </View>
       </View>
 
@@ -603,16 +610,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
     marginTop: 2
-  },
-  iconButton: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    height: 44,
-    justifyContent: "center",
-    width: 44
   },
   bio: {
     color: colors.muted,
