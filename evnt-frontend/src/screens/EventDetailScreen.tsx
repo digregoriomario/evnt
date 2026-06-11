@@ -45,6 +45,8 @@ export function EventDetailScreen({
   const seatsLabel = event.capacity
     ? `${event.participants}/${event.capacity}`
     : `${event.participants}+`;
+  const isCancelled = event.status === "cancelled";
+  const ctaMeta = isCancelled ? "Evento non disponibile" : registered ? "Partecipazione confermata" : seatsLabel;
   const imageUri = getEventImage(event);
   const subcategoryLabel = getEventSubcategoryLabel(event);
   const openExternalMap = () => {
@@ -98,7 +100,7 @@ export function EventDetailScreen({
               <Ionicons color={colors.ink} name="chevron-back" size={24} />
             </Pressable>
             <View style={styles.trailingActions}>
-              {canEdit && onEdit ? (
+              {canEdit && !isCancelled && onEdit ? (
                 <Pressable
                   accessibilityLabel="Modifica evento"
                   accessibilityRole="button"
@@ -108,7 +110,7 @@ export function EventDetailScreen({
                   <Ionicons color={colors.ink} name="create-outline" size={22} />
                 </Pressable>
               ) : null}
-              {canEdit && onDelete ? (
+              {canEdit && !isCancelled && onDelete ? (
                 <Pressable
                   accessibilityLabel="Elimina evento"
                   accessibilityRole="button"
@@ -121,8 +123,10 @@ export function EventDetailScreen({
               <Pressable
                 accessibilityLabel={favorite ? "Rimuovi preferito" : "Aggiungi preferito"}
                 accessibilityRole="button"
+                accessibilityState={{ disabled: isCancelled }}
+                disabled={isCancelled}
                 onPress={onToggleFavorite}
-                style={styles.roundButton}
+                style={[styles.roundButton, isCancelled && styles.roundButtonDisabled]}
               >
                 <Ionicons color={favorite ? colors.primary : colors.ink} name={favorite ? "heart" : "heart-outline"} size={22} />
               </Pressable>
@@ -133,6 +137,12 @@ export function EventDetailScreen({
         <View style={styles.content}>
           <View style={styles.badgeRow}>
             <PillButton accent={accent} emoji={emoji} label={subcategoryLabel} soft={soft} />
+            {isCancelled ? (
+              <View style={styles.cancelledBadge}>
+                <Ionicons color={colors.danger} name="close-circle-outline" size={16} />
+                <Text style={styles.cancelledBadgeText}>Annullato</Text>
+              </View>
+            ) : null}
             {registered ? (
               <View style={styles.registeredBadge}>
                 <Ionicons color={colors.green} name="checkmark-circle-outline" size={16} />
@@ -140,6 +150,14 @@ export function EventDetailScreen({
               </View>
             ) : null}
           </View>
+          {isCancelled ? (
+            <View style={styles.cancelledNotice}>
+              <Ionicons color={colors.danger} name="alert-circle-outline" size={20} />
+              <Text style={styles.cancelledNoticeText}>
+                Questo evento e stato annullato dall'organizzatore.
+              </Text>
+            </View>
+          ) : null}
           <Text style={styles.title}>{event.title}</Text>
           <Text style={styles.description}>{event.description}</Text>
 
@@ -182,9 +200,13 @@ export function EventDetailScreen({
       <View style={styles.ctaBar}>
         <View style={styles.ctaCopy}>
           <Text style={styles.ctaPrice}>{priceLabel}</Text>
-          <Text style={styles.ctaMeta}>{registered ? "Partecipazione confermata" : seatsLabel}</Text>
+          <Text style={styles.ctaMeta}>{ctaMeta}</Text>
         </View>
-        {registered ? (
+        {isCancelled ? (
+          <View style={styles.disabledCtaButton}>
+            <Text style={styles.disabledCtaText}>Annullato</Text>
+          </View>
+        ) : registered ? (
           <View style={styles.ctaActions}>
             {onOpenChat ? (
               <Pressable
@@ -274,6 +296,9 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 44
   },
+  roundButtonDisabled: {
+    opacity: 0.55
+  },
   deleteRoundButton: {
     backgroundColor: "rgba(255,241,240,0.96)"
   },
@@ -304,6 +329,40 @@ const styles = StyleSheet.create({
     color: colors.green,
     fontSize: 13,
     fontWeight: "900"
+  },
+  cancelledBadge: {
+    alignItems: "center",
+    backgroundColor: colors.roseSoft,
+    borderColor: "#FCA5A5",
+    borderRadius: 22,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: 6,
+    minHeight: 42,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm
+  },
+  cancelledBadgeText: {
+    color: colors.danger,
+    fontSize: 13,
+    fontWeight: "900"
+  },
+  cancelledNotice: {
+    alignItems: "center",
+    backgroundColor: colors.roseSoft,
+    borderColor: "#FCA5A5",
+    borderRadius: radius.md,
+    borderWidth: 1,
+    flexDirection: "row",
+    gap: spacing.sm,
+    padding: spacing.md
+  },
+  cancelledNoticeText: {
+    color: colors.danger,
+    flex: 1,
+    fontSize: 14,
+    fontWeight: "800",
+    lineHeight: 20
   },
   title: {
     color: colors.ink,
@@ -506,6 +565,22 @@ const styles = StyleSheet.create({
     minHeight: 50,
     minWidth: 112,
     paddingHorizontal: spacing.lg
+  },
+  disabledCtaButton: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    minHeight: 50,
+    minWidth: 112,
+    justifyContent: "center",
+    paddingHorizontal: spacing.lg
+  },
+  disabledCtaText: {
+    color: colors.muted,
+    fontSize: 15,
+    fontWeight: "900"
   },
   ctaActions: {
     alignItems: "center",

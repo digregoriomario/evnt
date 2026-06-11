@@ -27,6 +27,8 @@ const formatTimeLabel = (d: Date) =>
 
 export const subcategoryTagPrefix = "subcategory:";
 export const cityTagPrefix = "city:";
+export const eventStatusTagPrefix = "status:";
+export const cancelledEventTag = `${eventStatusTagPrefix}cancelled`;
 
 export const subcategoryFromTags = (tags: string[]) =>
   tags.find((tag) => tag.startsWith(subcategoryTagPrefix))?.slice(subcategoryTagPrefix.length).trim();
@@ -35,7 +37,12 @@ export const cityFromTags = (tags: string[]) =>
   tags.find((tag) => tag.startsWith(cityTagPrefix))?.slice(cityTagPrefix.length).trim();
 
 export const publicEventTags = (tags: string[]) =>
-  tags.filter((tag) => !tag.startsWith(subcategoryTagPrefix) && !tag.startsWith(cityTagPrefix));
+  tags.filter(
+    (tag) =>
+      !tag.startsWith(subcategoryTagPrefix) &&
+      !tag.startsWith(cityTagPrefix) &&
+      !tag.startsWith(eventStatusTagPrefix)
+  );
 
 const nonEmpty = (value?: string | null) => {
   const trimmed = value?.trim();
@@ -92,6 +99,7 @@ export const serializeEvent = (e: EventRecord, ctx: SerializeContext = {}) => {
   const subcategory = subcategoryFromTags(e.tags);
   const address = nonEmpty(e.address) ?? e.place;
   const city = nonEmpty(e.city) ?? cityFromTags(e.tags) ?? cityFromPlace(address);
+  const cancelled = e.tags.includes(cancelledEventTag);
 
   return {
     id: String(e.id),
@@ -122,7 +130,7 @@ export const serializeEvent = (e: EventRecord, ctx: SerializeContext = {}) => {
     subcategory: subcategory || undefined,
     favorite: ctx.favorite ?? false,
     registered: ctx.registered ?? false,
-    status: e.isLive ? "live" : popularity >= 85 ? "trending" : undefined
+    status: cancelled ? "cancelled" : e.isLive ? "live" : popularity >= 85 ? "trending" : undefined
   };
 };
 

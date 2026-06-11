@@ -1,7 +1,7 @@
 import { NotificationType } from "@prisma/client";
 import { prisma } from "../lib/prisma";
 import { eventCleanupNow } from "./eventsCleanup";
-import { cityFromPlace, cityFromTags } from "./serialize";
+import { cancelledEventTag, cityFromPlace, cityFromTags } from "./serialize";
 
 const scheduledNotificationIntervalMs = 60 * 60 * 1000;
 const hourMs = 60 * 60 * 1000;
@@ -18,6 +18,16 @@ const pushEnabledTypes = new Set<NotificationType>([
   "LOW_SEATS",
   "EVENT_FULL",
   "CHAT_MESSAGE",
+  "ORGANIZER_ANNOUNCEMENT"
+]);
+const eventBackedNotificationTypes = new Set<NotificationType>([
+  "NEW_MATCH",
+  "SAVED_EVENT_REMINDER",
+  "EVENT_STARTING",
+  "EVENT_UPDATED",
+  "EVENT_CANCELLED",
+  "LOW_SEATS",
+  "EVENT_FULL",
   "ORGANIZER_ANNOUNCEMENT"
 ]);
 
@@ -78,6 +88,10 @@ function uniqueUserIds(ids: number[]) {
 }
 
 async function createNotification(input: NotificationInput) {
+  if (eventBackedNotificationTypes.has(input.type) && !input.eventId) {
+    throw new Error(`Notification ${input.type} requires an eventId`);
+  }
+
   const data = {
     eventId: input.eventId,
     message: input.message,
@@ -268,6 +282,7 @@ export async function notifyEventCancelled(event: EventSnapshot) {
   await createNotifications(
     userIds.map((userId) => ({
       dedupeKey: `event-cancelled:${userId}:${event.id}`,
+      eventId: event.id,
       message: `${event.title} e stato annullato dall'organizzatore.`,
       pushMode: "await",
       title: "Evento annullato",
@@ -285,7 +300,7 @@ export async function notifyCapacityMilestones(eventId: number) {
       _count: { select: { participations: true } }
     }
   });
-  if (!event?.maxSeats) {
+  if (!event?.maxSeats || event.tags.includes(cancelledEventTag)) {
     return;
   }
 
@@ -332,6 +347,9 @@ export async function notifyChatMessage(eventId: number, senderId: number, sende
     include: { participations: { select: { userId: true } } }
   });
   if (!event) {
+    return;
+  }
+  if (event.tags.includes(cancelledEventTag)) {
     return;
   }
 
@@ -386,7 +404,8 @@ export async function runScheduledEventNotifications(now = eventCleanupNow()) {
           dateHour: {
             gt: savedReminderAfter,
             lte: savedReminderBefore
-          }
+          },
+          NOT: { tags: { has: cancelledEventTag } }
         }
       },
       include: { event: true }
@@ -397,7 +416,8 @@ export async function runScheduledEventNotifications(now = eventCleanupNow()) {
           dateHour: {
             gt: now,
             lte: startingReminderBefore
-          }
+          },
+          NOT: { tags: { has: cancelledEventTag } }
         }
       },
       include: { event: true }

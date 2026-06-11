@@ -3,7 +3,7 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { asyncHandler, HttpError } from "../utils/http";
 import { authRequired } from "../middleware/auth";
-import { publicUser, serializeEvent } from "../utils/serialize";
+import { cancelledEventTag, publicUser, serializeEvent } from "../utils/serialize";
 
 // Authenticated user-centric endpoints (profile, my events/bookmarks).
 export const meRouter = Router();
@@ -72,7 +72,7 @@ meRouter.get(
   "/events",
   asyncHandler(async (req, res) => {
     const events = await prisma.event.findMany({
-      where: { creatorId: req.userId },
+      where: { creatorId: req.userId, NOT: { tags: { has: cancelledEventTag } } },
       include: eventInclude,
       orderBy: { dateHour: "asc" }
     });
@@ -84,7 +84,7 @@ meRouter.get(
   "/bookmarks",
   asyncHandler(async (req, res) => {
     const bookmarks = await prisma.bookmark.findMany({
-      where: { userId: req.userId },
+      where: { userId: req.userId, event: { NOT: { tags: { has: cancelledEventTag } } } },
       include: { event: { include: eventInclude } },
       orderBy: { savedAt: "desc" }
     });
@@ -96,7 +96,7 @@ meRouter.get(
   "/participations",
   asyncHandler(async (req, res) => {
     const parts = await prisma.participation.findMany({
-      where: { userId: req.userId },
+      where: { userId: req.userId, event: { NOT: { tags: { has: cancelledEventTag } } } },
       include: { event: { include: eventInclude } },
       orderBy: { joinedAt: "desc" }
     });

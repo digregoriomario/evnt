@@ -13,8 +13,10 @@ import {
   notifyNewMatchingEvent
 } from "../utils/notifications";
 import {
+  cancelledEventTag,
   cityTagPrefix,
   cityFromTags,
+  eventStatusTagPrefix,
   labelToChatType,
   serializeEvent,
   subcategoryFromTags,
@@ -30,6 +32,7 @@ async function distanceMap(lat: number, lng: number): Promise<Map<number, number
            ST_Distance("geom"::geography,
                        ST_SetSRID(ST_MakePoint(${lng}, ${lat}), 4326)::geography) / 1000 AS km
     FROM "events"
+    WHERE NOT (${cancelledEventTag} = ANY("tags"))
   `);
   return new Map(rows.map((r) => [Number(r.id), Number(r.km)]));
 }
@@ -140,7 +143,12 @@ function normalizeEventTags(tags: string[], subcategory?: string, city?: string)
   const publicTags = tags
     .map((tag) => tag.trim())
     .filter((tag) => {
-      if (!tag || tag.startsWith(subcategoryTagPrefix) || tag.startsWith(cityTagPrefix)) {
+      if (
+        !tag ||
+        tag.startsWith(subcategoryTagPrefix) ||
+        tag.startsWith(cityTagPrefix) ||
+        tag.startsWith(eventStatusTagPrefix)
+      ) {
         return false;
       }
       const key = tag.toLowerCase();
@@ -196,6 +204,7 @@ async function getEventChatForUser(eventId: number, userId: number) {
     include: { participations: { select: { userId: true } } }
   });
   if (!event) throw new HttpError(404, "Evento non trovato");
+  if (event.tags.includes(cancelledEventTag)) throw new HttpError(410, "Evento annullato");
 
   const canAccess =
     event.creatorId === userId || event.participations.some((participation) => participation.userId === userId);
@@ -213,7 +222,9 @@ eventsRouter.get(
   asyncHandler(async (req, res) => {
     const q = listQuery.parse(req.query);
 
-    const where: Prisma.EventWhereInput = {};
+    const where: Prisma.EventWhereInput = {
+      NOT: { tags: { has: cancelledEventTag } }
+    };
     if (q.category) where.category = { name: q.category };
     if (typeof q.maxPrice === "number") where.price = { lte: q.maxPrice };
     if (q.q) {
@@ -356,7 +367,7 @@ eventsRouter.put(
   asyncHandler(async (req, res) => {
     const id = eventIdFromParams(req.params.id);
     const existing = await prisma.event.findUnique({ where: { id } });
-    if (!existing) throw new HttpError(404, "Evento non trovato");
+    if (!existing || existing.tags.includes(cancelledEventTag)) throw new HttpError(404, "Evento non trovato");
     if (existing.creatorId !== req.userId) throw new HttpError(403, "Non sei il creatore");
 
     const body = createSchema.partial().parse(req.body);
@@ -411,8 +422,13 @@ eventsRouter.delete(
     const existing = await prisma.event.findUnique({ where: { id } });
     if (!existing) throw new HttpError(404, "Evento non trovato");
     if (existing.creatorId !== req.userId) throw new HttpError(403, "Non sei il creatore");
-    await notifyEventCancelled(existing);
-    await prisma.event.delete({ where: { id } });
+    if (!existing.tags.includes(cancelledEventTag)) {
+      await notifyEventCancelled(existing);
+      await prisma.event.update({
+        where: { id },
+        data: { tags: [...existing.tags, cancelledEventTag] }
+      });
+    }
     res.status(204).send();
   })
 );
@@ -430,7 +446,7 @@ eventsRouter.post(
             where: { id: eventId },
             include: { _count: { select: { participations: true } } }
           });
-          if (!event) throw new HttpError(404, "Evento non trovato");
+          if (!event || event.tags.includes(cancelledEventTag)) throw new HttpError(404, "Evento non trovato");
 
           const already = await tx.participation.findUnique({
             where: { userId_eventId: { userId: req.userId!, eventId } }
@@ -481,8 +497,8 @@ eventsRouter.post(
   authRequired,
   asyncHandler(async (req, res) => {
     const eventId = eventIdFromParams(req.params.id);
-    const event = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true } });
-    if (!event) throw new HttpError(404, "Evento non trovato");
+    const event = await prisma.event.findUnique({ where: { id: eventId }, select: { id: true, tags: true } });
+    if (!event || event.tags.includes(cancelledEventTag)) throw new HttpError(404, "Evento non trovato");
     await prisma.bookmark.upsert({
       where: { userId_eventId: { userId: req.userId!, eventId } },
       create: { userId: req.userId!, eventId },

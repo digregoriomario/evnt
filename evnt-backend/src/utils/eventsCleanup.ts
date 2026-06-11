@@ -14,11 +14,21 @@ export function expiredEventsCutoff(now = eventCleanupNow()) {
 }
 
 export async function closeExpiredEvents(now = eventCleanupNow()) {
+  const linkedEventIds = await prisma.notification.findMany({
+    distinct: ["eventId"],
+    select: { eventId: true },
+    where: { eventId: { not: null } }
+  });
+  const protectedEventIds = linkedEventIds
+    .map((notification) => notification.eventId)
+    .filter((eventId): eventId is number => typeof eventId === "number");
+
   return prisma.event.deleteMany({
     where: {
       dateHour: {
         lt: expiredEventsCutoff(now)
-      }
+      },
+      id: { notIn: protectedEventIds }
     }
   });
 }

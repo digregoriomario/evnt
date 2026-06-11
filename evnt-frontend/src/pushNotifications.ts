@@ -66,27 +66,41 @@ function getProjectId() {
   return Constants.easConfig?.projectId ?? extra?.eas?.projectId;
 }
 
+function pushDataStringId(value: unknown) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return String(value);
+  }
+
+  if (typeof value !== "string") {
+    return undefined;
+  }
+
+  const trimmed = value.trim();
+  return trimmed ? trimmed : undefined;
+}
+
+function pushDataNumericId(value: unknown) {
+  const id =
+    typeof value === "number"
+      ? value
+      : typeof value === "string" && value.trim()
+        ? Number(value)
+        : undefined;
+
+  return typeof id === "number" && Number.isInteger(id) && id > 0 ? id : undefined;
+}
+
 function notificationDataFromUnknown(data: unknown): PushNotificationData {
   if (!data || typeof data !== "object") {
     return {};
   }
 
   const record = data as Record<string, unknown>;
-  const eventId =
-    typeof record.eventId === "string" || typeof record.eventId === "number"
-      ? String(record.eventId)
-      : undefined;
-  const notificationId =
-    typeof record.notificationId === "number"
-      ? record.notificationId
-      : typeof record.notificationId === "string"
-        ? Number(record.notificationId)
-        : undefined;
   const type = typeof record.type === "string" ? record.type : undefined;
 
   return {
-    eventId,
-    notificationId: Number.isFinite(notificationId) ? notificationId : undefined,
+    eventId: pushDataStringId(record.eventId),
+    notificationId: pushDataNumericId(record.notificationId),
     type
   };
 }

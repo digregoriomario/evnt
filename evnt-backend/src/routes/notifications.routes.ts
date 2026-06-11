@@ -16,6 +16,14 @@ const pushTokenSchema = z.object({
 
 const notificationIdSchema = z.coerce.number().int().positive();
 
+function notificationEventId(notification: { dedupeKey: string | null; eventId: number | null }) {
+  if (notification.eventId) {
+    return String(notification.eventId);
+  }
+
+  return notification.dedupeKey?.match(/^event-cancelled:\d+:(\d+)$/)?.[1];
+}
+
 notificationsRouter.get(
   "/",
   asyncHandler(async (req, res) => {
@@ -29,7 +37,7 @@ notificationsRouter.get(
     res.json({
       notifications: notifications.map((n) => ({
         id: n.id,
-        eventId: n.eventId ? String(n.eventId) : undefined,
+        eventId: notificationEventId(n),
         type: n.type,
         title: n.title,
         message: n.message,

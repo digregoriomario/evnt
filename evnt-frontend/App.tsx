@@ -42,6 +42,10 @@ const mainScreens: ScreenKey[] = ["home", "map", "create", "inbox", "profile"];
 const chatNotificationTypes = new Set<NotificationType>(["CHAT_MESSAGE", "ORGANIZER_ANNOUNCEMENT"]);
 const closedEventDelayMs = 3 * 24 * 60 * 60 * 1000;
 
+function isChatNotificationType(type?: string) {
+  return typeof type === "string" && chatNotificationTypes.has(type as NotificationType);
+}
+
 function isClosedEvent(event: EvntEvent, now = Date.now()) {
   if (!event.dateTimeIso) {
     return false;
@@ -121,6 +125,10 @@ function AppContent() {
     () => events.find((event) => event.id === selectedEventId) ?? events[0],
     [events, selectedEventId]
   );
+  const visibleEvents = useMemo(
+    () => events.filter((event) => event.status !== "cancelled"),
+    [events]
+  );
 
   const activeMainScreen = mainScreens.includes(screen) ? screen : previousScreen;
   const showBottomNav = !sessionLoading && user !== null && mainScreens.includes(screen);
@@ -183,14 +191,14 @@ function AppContent() {
     setScreen("detail");
   };
 
-  const openInbox = (eventId?: string) => {
+  const openInbox = useCallback((eventId?: string) => {
     setEditingEventId(undefined);
     setInitialChatEventId(eventId);
     if (mainScreens.includes(screen)) {
       setPreviousScreen(screen);
     }
     setScreen("inbox");
-  };
+  }, [screen]);
 
   const openEventById = useCallback(
     async (eventId: string) => {
@@ -237,9 +245,13 @@ function AppContent() {
       }
       if (data.eventId) {
         await openEventById(data.eventId);
+        return;
+      }
+      if (isChatNotificationType(data.type)) {
+        openInbox();
       }
     },
-    [markNotificationRead, openEventById]
+    [markNotificationRead, openEventById, openInbox]
   );
 
   const openNotification = async (notification: Notification) => {
@@ -249,6 +261,11 @@ function AppContent() {
 
     if (notification.eventId) {
       await openEventById(notification.eventId);
+      return;
+    }
+
+    if (isChatNotificationType(notification.type)) {
+      openInbox();
     }
   };
 
@@ -772,10 +789,14 @@ function AppContent() {
     try {
       const remote: ApiEvent[] = await api.listEvents();
       const liveEvents = activeEvents(remote);
-      setEvents(liveEvents);
-      setSelectedEventId((current) =>
-        current && liveEvents.some((event) => event.id === current) ? current : liveEvents[0]?.id
-      );
+      setEvents((current) => {
+        const retainedCancelledEvents = current.filter(
+          (event) =>
+            event.status === "cancelled" && !liveEvents.some((liveEvent) => liveEvent.id === event.id)
+        );
+        return [...liveEvents, ...retainedCancelledEvents];
+      });
+      setSelectedEventId((current) => current ?? liveEvents[0]?.id);
       setFavorites(new Set(liveEvents.filter((e) => e.favorite).map((e) => e.id)));
       setRegistrations(new Set(liveEvents.filter((e) => e.registered).map((e) => e.id)));
     } catch {
@@ -1044,7 +1065,7 @@ function AppContent() {
     if (screen === "inbox") {
       return (
         <InboxScreen
-          events={events}
+          events={visibleEvents}
           initialEventId={initialChatEventId}
           onInitialEventHandled={() => setInitialChatEventId(undefined)}
           onRefresh={refreshAppData}
@@ -1059,7 +1080,7 @@ function AppContent() {
     if (screen === "map") {
       return (
         <MapScreen
-          events={events}
+          events={visibleEvents}
           favorites={favorites}
           filters={eventFilters}
           locationStatus={locationStatus}
@@ -1095,7 +1116,7 @@ function AppContent() {
     if (screen === "profile") {
       return (
         <ProfileScreen
-          events={events}
+          events={visibleEvents}
           favorites={favorites}
           onLogout={logout}
           onOpenEvent={openEvent}
@@ -1109,7 +1130,7 @@ function AppContent() {
 
     return (
       <HomeScreen
-        events={events}
+        events={visibleEvents}
         favorites={favorites}
         filters={eventFilters}
         locationStatus={locationStatus}

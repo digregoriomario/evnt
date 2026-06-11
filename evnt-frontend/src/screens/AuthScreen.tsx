@@ -493,17 +493,10 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
               <View style={styles.logoMark}>
                 <Ionicons color={colors.surface} name="radio-outline" size={24} />
               </View>
-              <Text style={styles.logoText}>Evnt</Text>
+              <Text style={styles.brandTitle}>
+                {mode === "signup" ? "Crea il tuo spazio in Evnt." : "Bentornato su Evnt."}
+              </Text>
             </View>
-
-            <Text style={styles.title}>
-              {mode === "signup" ? "Crea il tuo spazio in Evnt." : "Bentornato su Evnt."}
-            </Text>
-            <Text style={styles.subtitle}>
-              {mode === "signup"
-                ? "Completa i passaggi e personalizziamo subito il tuo feed."
-                : "Accedi con email e password per continuare."}
-            </Text>
 
             <View style={styles.panel}>
               <View style={styles.formNav}>
@@ -740,8 +733,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
             <>
               <View style={styles.formHeader}>
                 <View>
-                  <Text style={styles.formKicker}>Bentornato</Text>
-                  <Text style={styles.formTitle}>Accedi con email</Text>
+                  <Text style={styles.formTitle}>Accedi</Text>
                 </View>
                 <Ionicons color={colors.primary} name="lock-closed-outline" size={26} />
               </View>
@@ -896,7 +888,7 @@ const styles = StyleSheet.create({
   brandRow: {
     alignItems: "center",
     flexDirection: "row",
-    gap: spacing.sm
+    gap: spacing.md
   },
   logoMark: {
     alignItems: "center",
@@ -906,18 +898,12 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 42
   },
-  logoText: { color: colors.ink, fontSize: 28, fontWeight: "900" },
-  title: {
+  brandTitle: {
     color: colors.ink,
-    fontSize: 32,
+    flex: 1,
+    fontSize: 27,
     fontWeight: "900",
-    lineHeight: 36
-  },
-  subtitle: {
-    color: colors.muted,
-    fontSize: 16,
-    fontWeight: "600",
-    lineHeight: 23
+    lineHeight: 32
   },
   panel: {
     backgroundColor: colors.surface,

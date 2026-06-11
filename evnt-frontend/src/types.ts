@@ -43,7 +43,7 @@ export type EvntEvent = {
   };
   dateTimeIso?: string;
   creatorCountsAsParticipant?: boolean;
-  status?: "live" | "trending";
+  status?: "live" | "trending" | "cancelled";
   subcategory?: string;
 };
 
