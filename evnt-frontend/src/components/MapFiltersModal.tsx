@@ -18,8 +18,10 @@ type MapFiltersModalProps = {
   onReset: () => void;
   price: PriceFilter;
   query: string;
+  radiusDisabled?: boolean;
   radiusKm: number;
   radiusOptions: number[];
+  showQueryField?: boolean;
   visible: boolean;
 };
 
@@ -35,8 +37,10 @@ export function MapFiltersModal({
   onReset,
   price,
   query,
+  radiusDisabled,
   radiusKm,
   radiusOptions,
+  showQueryField,
   visible
 }: MapFiltersModalProps) {
   return (
@@ -52,8 +56,10 @@ export function MapFiltersModal({
           onReset={onReset}
           price={price}
           query={query}
+          radiusDisabled={radiusDisabled}
           radiusKm={radiusKm}
           radiusOptions={radiusOptions}
+          showQueryField={showQueryField}
         />
       </View>
     </Modal>
@@ -70,8 +76,10 @@ export function MapFiltersSheet({
   onReset,
   price,
   query,
+  radiusDisabled = false,
   radiusKm,
-  radiusOptions
+  radiusOptions,
+  showQueryField = true
 }: MapFiltersSheetProps) {
   return (
     <View style={styles.filterSheet}>
@@ -85,15 +93,17 @@ export function MapFiltersSheet({
         />
       </View>
 
-      <View style={styles.filterSection}>
-        <Text style={styles.filterLabel}>Ricerca</Text>
-        <SearchField
-          accessibilityLabel="Cerca nei filtri"
-          onChangeText={onQueryChange}
-          placeholder="Titolo, luogo o citta"
-          value={query}
-        />
-      </View>
+      {showQueryField ? (
+        <View style={styles.filterSection}>
+          <Text style={styles.filterLabel}>Ricerca</Text>
+          <SearchField
+            accessibilityLabel="Cerca nei filtri"
+            onChangeText={onQueryChange}
+            placeholder="Titolo, luogo o citta"
+            value={query}
+          />
+        </View>
+      ) : null}
 
       <View style={styles.filterSection}>
         <Text style={styles.filterLabel}>Categoria</Text>
@@ -132,13 +142,19 @@ export function MapFiltersSheet({
       <View style={styles.filterSection}>
         <View style={styles.radiusHeader}>
           <Text style={styles.filterLabel}>Raggio d'azione</Text>
-          <Text style={styles.radiusValue}>{radiusKm} km</Text>
+          <Text style={styles.radiusValue}>
+            {radiusDisabled ? "Citta selezionata" : radiusKm === 0 ? "Tutti" : `${radiusKm} km`}
+          </Text>
         </View>
         <RadiusSegmentedControl
+          disabled={radiusDisabled}
           onChange={onRadiusChange}
           options={radiusOptions}
           value={radiusKm}
         />
+        {radiusDisabled ? (
+          <Text style={styles.disabledHint}>Disponibile quando la geolocalizzazione è attiva.</Text>
+        ) : null}
       </View>
 
       <View style={styles.sheetActions}>
@@ -154,26 +170,30 @@ export function MapFiltersSheet({
 }
 
 type RadiusSegmentedControlProps = {
+  disabled?: boolean;
   onChange: (value: number) => void;
   options: number[];
   value: number;
 };
 
-function RadiusSegmentedControl({ onChange, options, value }: RadiusSegmentedControlProps) {
+function RadiusSegmentedControl({ disabled = false, onChange, options, value }: RadiusSegmentedControlProps) {
   return (
-    <View style={styles.segmented}>
+    <View style={[styles.segmented, disabled && styles.segmentedDisabled]}>
       {options.map((option) => {
-        const selected = value === option;
+        const selected = !disabled && value === option;
         return (
           <Pressable
-            accessibilityLabel={`Raggio ${option} chilometri`}
+            accessibilityLabel={option === 0 ? "Mostra tutti gli eventi" : `Raggio ${option} chilometri`}
             accessibilityRole="button"
-            accessibilityState={{ selected }}
+            accessibilityState={{ disabled, selected }}
+            disabled={disabled}
             key={option}
             onPress={() => onChange(option)}
-            style={[styles.segment, selected && styles.segmentActive]}
+            style={[styles.segment, selected && styles.segmentActive, disabled && styles.segmentDisabled]}
           >
-            <Text style={[styles.segmentText, selected && styles.segmentTextActive]}>{option} km</Text>
+            <Text style={[styles.segmentText, selected && styles.segmentTextActive, disabled && styles.segmentTextDisabled]}>
+              {option === 0 ? "Tutti" : `${option} km`}
+            </Text>
           </Pressable>
         );
       })}
@@ -200,6 +220,12 @@ function FilterOption({ label, onPress, selected }: FilterOptionProps) {
 }
 
 const styles = StyleSheet.create({
+  disabledHint: {
+    color: colors.muted,
+    fontSize: 12,
+    fontWeight: "700",
+    lineHeight: 16
+  },
   filterLabel: {
     ...form.label
   },
@@ -232,6 +258,9 @@ const styles = StyleSheet.create({
     gap: 2,
     padding: 3
   },
+  segmentedDisabled: {
+    opacity: 0.62
+  },
   segment: {
     alignItems: "center",
     borderRadius: radius.sm,
@@ -245,6 +274,9 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderWidth: 1
   },
+  segmentDisabled: {
+    backgroundColor: "transparent"
+  },
   segmentText: {
     color: colors.muted,
     fontSize: 12,
@@ -252,6 +284,9 @@ const styles = StyleSheet.create({
   },
   segmentTextActive: {
     color: colors.ink
+  },
+  segmentTextDisabled: {
+    color: colors.muted
   },
   primaryAction: {
     alignItems: "center",

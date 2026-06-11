@@ -3,9 +3,9 @@ import { Image, Pressable, StyleSheet, Text, View } from "react-native";
 
 import {
   categoryColors,
-  categoryDefaultImages,
   categoryEmojis,
   categorySoftColors,
+  getEventImage,
   getEventSubcategoryLabel
 } from "../data/events";
 import { colors, hitSlop, radius, shadow, spacing, typography } from "../theme";
@@ -32,7 +32,7 @@ export function EventCard({
   const accent = categoryColors[event.category];
   const emoji = categoryEmojis[event.category];
   const soft = categorySoftColors[event.category];
-  const imageUri = event.image || categoryDefaultImages[event.category];
+  const imageUri = getEventImage(event);
   const categoryLabel = getEventSubcategoryLabel(event);
   const seatsLabel = event.capacity
     ? `${event.participants}/${event.capacity}`

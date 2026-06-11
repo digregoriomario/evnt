@@ -65,9 +65,16 @@ export function HomeScreen({
   const [filtersOpen, setFiltersOpen] = useState(false);
   const [notificationsOpen, setNotificationsOpen] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
-  const usesCityFallback = locationStatus !== "granted" || userCoordinates === null;
   const unreadNotifications = notifications.filter((notification) => !notification.isRead).length;
-  const { activeFilterCount, filteredEvents, showLocationFallbackNotice } = useMemo(
+  const {
+    activeFilterCount,
+    eventDistances,
+    filteredEvents,
+    outsideRadiusEvents,
+    radiusFilterEnabled,
+    showLocationFallbackNotice,
+    usesCityFallback
+  } = useMemo(
     () =>
       buildEventFilterResult({
         events,
@@ -79,6 +86,12 @@ export function HomeScreen({
       }),
     [events, filters, locationStatus, user, userCoordinates]
   );
+  const hasFartherEvents =
+    radiusFilterEnabled && filteredEvents.length === 0 && outsideRadiusEvents.length > 0 && filters.radiusKm > 0;
+  const radiusLabel = filters.radiusKm === 0 ? "senza limite di distanza" : `entro ${filters.radiusKm} km`;
+  const resultLabel = usesCityFallback
+    ? `${filteredEvents.length} eventi a ${user.city}`
+    : `${filteredEvents.length} risultati ${radiusLabel}`;
 
   const handleRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -141,9 +154,7 @@ export function HomeScreen({
         <View style={styles.feedHeader}>
           <View>
             <Text style={styles.sectionTitle}>Eventi</Text>
-            <Text style={styles.sectionMeta}>
-              {filteredEvents.length} risultati{usesCityFallback ? ` a ${user.city}` : ""}
-            </Text>
+            <Text style={styles.sectionMeta}>{resultLabel}</Text>
           </View>
           {activeFilterCount > 0 && (
             <Pressable accessibilityRole="button" onPress={onResetFilters} style={styles.clearButton}>
@@ -152,7 +163,29 @@ export function HomeScreen({
           )}
         </View>
 
-        {filteredEvents.length === 0 ? (
+        {hasFartherEvents ? (
+          <>
+            <EmptyState
+              body={`Nessun evento ${radiusLabel} con questi filtri. Qui sotto trovi quelli piu lontani.`}
+              icon="calendar-clear-outline"
+              title="0 risultati"
+            />
+            <View style={styles.fartherHeader}>
+              <Text style={styles.fartherTitle}>Eventi oltre {filters.radiusKm} km</Text>
+              <Text style={styles.fartherMeta}>{outsideRadiusEvents.length} risultati piu lontani</Text>
+            </View>
+            {outsideRadiusEvents.map((event) => (
+              <EventCard
+                event={{ ...event, distanceKm: eventDistances[event.id] ?? event.distanceKm }}
+                favorite={favorites.has(event.id)}
+                key={event.id}
+                onPress={() => onOpenEvent(event)}
+                onToggleFavorite={() => onToggleFavorite(event.id)}
+                registered={registrations.has(event.id)}
+              />
+            ))}
+          </>
+        ) : filteredEvents.length === 0 ? (
           <EmptyState
             body={
               usesCityFallback
@@ -165,7 +198,7 @@ export function HomeScreen({
         ) : (
           filteredEvents.map((event) => (
             <EventCard
-              event={event}
+              event={{ ...event, distanceKm: eventDistances[event.id] ?? event.distanceKm }}
               favorite={favorites.has(event.id)}
               key={event.id}
               onPress={() => onOpenEvent(event)}
@@ -188,6 +221,8 @@ export function HomeScreen({
         query={filters.query}
         radiusKm={filters.radiusKm}
         radiusOptions={[...eventRadiusOptions]}
+        radiusDisabled={!radiusFilterEnabled}
+        showQueryField={false}
         visible={filtersOpen}
       />
 
@@ -264,4 +299,18 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "900"
   },
+  fartherHeader: {
+    gap: 2,
+    marginTop: -spacing.sm
+  },
+  fartherMeta: {
+    color: colors.muted,
+    fontSize: 13,
+    fontWeight: "700"
+  },
+  fartherTitle: {
+    color: colors.ink,
+    fontSize: 18,
+    fontWeight: "900"
+  }
 });

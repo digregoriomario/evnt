@@ -9,7 +9,7 @@ export const defaultEventFilters: EventFilterState = {
   radiusKm: 10
 };
 
-export const eventRadiusOptions = [1, 3, 5, 10, 25] as const;
+export const eventRadiusOptions = [0, 1, 3, 5, 10, 25] as const;
 
 export const defaultMapCoordinates: Coordinates = {
   latitude: 40.6815,
@@ -32,6 +32,8 @@ export type EventFilterResult = {
   eventDistances: Record<string, number>;
   filteredEvents: EvntEvent[];
   hasDeviceLocation: boolean;
+  outsideRadiusEvents: EvntEvent[];
+  radiusFilterEnabled: boolean;
   radiusCenter: Coordinates;
   showLocationFallbackNotice: boolean;
   usesCityFallback: boolean;
@@ -41,12 +43,12 @@ export function getFallbackCoordinates(user: UserProfile): Coordinates {
   return user.cityCoordinates ?? findCitySuggestion(user.city)?.coordinates ?? defaultMapCoordinates;
 }
 
-export function getActiveEventFilterCount(filters: EventFilterState) {
+export function getActiveEventFilterCount(filters: EventFilterState, radiusFilterEnabled = true) {
   return (
     (filters.category === "Tutti" ? 0 : 1) +
     (filters.price === "tutti" ? 0 : 1) +
     (filters.query.trim() ? 1 : 0) +
-    (filters.radiusKm === defaultEventFilters.radiusKm ? 0 : 1)
+    (!radiusFilterEnabled || filters.radiusKm === defaultEventFilters.radiusKm ? 0 : 1)
   );
 }
 
@@ -60,6 +62,7 @@ export function buildEventFilterResult({
 }: BuildEventFilterResultArgs): EventFilterResult {
   const hasDeviceLocation = locationStatus === "granted" && userCoordinates !== null;
   const usesCityFallback = !hasDeviceLocation;
+  const radiusFilterEnabled = hasDeviceLocation;
   const radiusCenter = hasDeviceLocation && userCoordinates ? userCoordinates : getFallbackCoordinates(user);
   const normalizedQuery = filters.query.trim().toLowerCase();
 
@@ -68,42 +71,53 @@ export function buildEventFilterResult({
     return distances;
   }, {});
 
-  const filteredEvents = events
+  const eventsMatchingFilters = events
     .filter((event) => {
-      const matchesFallbackCity = !usesCityFallback || cityMatches(event.city, user.city);
       const matchesCategory = filters.category === "Tutti" || event.category === filters.category;
       const matchesQuery =
         normalizedQuery.length === 0 ||
         event.title.toLowerCase().includes(normalizedQuery) ||
         event.place.toLowerCase().includes(normalizedQuery) ||
-        event.city.toLowerCase().includes(normalizedQuery);
+        event.address.toLowerCase().includes(normalizedQuery) ||
+        event.city.toLowerCase().includes(normalizedQuery) ||
+        event.tags.some((tag) => tag.toLowerCase().includes(normalizedQuery));
       const matchesPrice =
         filters.price === "tutti" ||
         (filters.price === "gratis" && event.price === 0) ||
         (filters.price === "pagamento" && event.price > 0);
-      const distanceKm = eventDistances[event.id] ?? event.distanceKm;
+      const matchesFallbackCity = !usesCityFallback || cityMatches(event.city, user.city);
 
-      return (
-        matchesFallbackCity &&
-        matchesCategory &&
-        matchesQuery &&
-        matchesPrice &&
-        distanceKm <= filters.radiusKm
-      );
-    })
-    .sort((a, b) => {
-      if (sort !== "feed") {
-        return 0;
-      }
-
-      return b.affinity - a.affinity || (eventDistances[a.id] ?? a.distanceKm) - (eventDistances[b.id] ?? b.distanceKm);
+      return matchesCategory && matchesQuery && matchesPrice && matchesFallbackCity;
     });
 
+  const sortEvents = (items: EvntEvent[]) =>
+    [...items].sort((a, b) => {
+      const distanceDelta = (eventDistances[a.id] ?? a.distanceKm) - (eventDistances[b.id] ?? b.distanceKm);
+      if (sort !== "feed") {
+        return distanceDelta;
+      }
+
+      return b.affinity - a.affinity || distanceDelta;
+    });
+
+  const radiusLimited = radiusFilterEnabled && filters.radiusKm > 0;
+  const filteredEvents = sortEvents(
+    eventsMatchingFilters.filter((event) => {
+      const distanceKm = eventDistances[event.id] ?? event.distanceKm;
+      return !radiusLimited || distanceKm <= filters.radiusKm;
+    })
+  );
+  const outsideRadiusEvents = radiusLimited
+    ? sortEvents(eventsMatchingFilters.filter((event) => (eventDistances[event.id] ?? event.distanceKm) > filters.radiusKm))
+    : [];
+
   return {
-    activeFilterCount: getActiveEventFilterCount(filters),
+    activeFilterCount: getActiveEventFilterCount(filters, radiusFilterEnabled),
     eventDistances,
     filteredEvents,
     hasDeviceLocation,
+    outsideRadiusEvents,
+    radiusFilterEnabled,
     radiusCenter,
     showLocationFallbackNotice: usesCityFallback && locationStatus !== "loading",
     usesCityFallback

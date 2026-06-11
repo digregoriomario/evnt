@@ -8,7 +8,7 @@ import { BottomNav } from "./src/components/BottomNav";
 import { ToastBanner, type ToastTone } from "./src/components/ToastBanner";
 import { GluestackUIProvider } from "./src/components/ui";
 import { AuthScreen, type AuthResult } from "./src/screens/AuthScreen";
-import { CreateEventScreen } from "./src/screens/CreateEventScreen";
+import { CreateEventScreen, type CreateEventDraft } from "./src/screens/CreateEventScreen";
 import { EventDetailScreen } from "./src/screens/EventDetailScreen";
 import { HomeScreen } from "./src/screens/HomeScreen";
 import { InboxScreen } from "./src/screens/InboxScreen";
@@ -112,6 +112,7 @@ function AppContent() {
   const [userCoordinates, setUserCoordinates] = useState<Coordinates | null>(null);
   const [initialChatEventId, setInitialChatEventId] = useState<string | undefined>();
   const [editingEventId, setEditingEventId] = useState<string | undefined>();
+  const [createEventDraft, setCreateEventDraft] = useState<CreateEventDraft | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pushRegistrationAttemptRef = useRef<string | null>(null);
@@ -624,6 +625,7 @@ function AppContent() {
     api
       .createEvent(eventToPayload(event))
       .then((createdEvent) => {
+        setCreateEventDraft(null);
         const eventWithSubcategory = { ...createdEvent, subcategory: event.subcategory };
         setEvents((current) =>
           current.map((currentEvent) =>
@@ -759,6 +761,7 @@ function AppContent() {
     setNotifications([]);
     setPushToken(null);
     pushRegistrationAttemptRef.current = null;
+    setCreateEventDraft(null);
     setUser(null);
     setScreen("auth");
     setPreviousScreen("home");
@@ -1075,12 +1078,14 @@ function AppContent() {
     if (screen === "create") {
       return (
         <CreateEventScreen
+          draft={editingEvent ? null : createEventDraft}
           initialEvent={editingEvent}
           onCancel={editingEvent ? () => {
             setEditingEventId(undefined);
             setScreen("detail");
           } : undefined}
           onCreate={createEvent}
+          onDraftChange={setCreateEventDraft}
           onUpdate={updateEvent}
           user={user}
         />

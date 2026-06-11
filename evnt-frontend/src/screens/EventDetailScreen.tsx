@@ -5,9 +5,9 @@ import { EventMiniMap } from "../components/EventMiniMap";
 import { PillButton } from "../components/PillButton";
 import {
   categoryColors,
-  categoryDefaultImages,
   categoryEmojis,
   categorySoftColors,
+  getEventImage,
   getEventSubcategoryLabel
 } from "../data/events";
 import { colors, radius, shadow, spacing } from "../theme";
@@ -45,7 +45,7 @@ export function EventDetailScreen({
   const seatsLabel = event.capacity
     ? `${event.participants}/${event.capacity}`
     : `${event.participants}+`;
-  const imageUri = event.image || categoryDefaultImages[event.category];
+  const imageUri = getEventImage(event);
   const subcategoryLabel = getEventSubcategoryLabel(event);
   const openExternalMap = () => {
     const latitude = event.coordinates.latitude;
@@ -63,6 +63,16 @@ export function EventDetailScreen({
   };
 
   const requestDelete = () => {
+    if (Platform.OS === "web") {
+      const confirmed = (globalThis as unknown as { confirm?: (message: string) => boolean }).confirm?.(
+        "Eliminare evento? L'evento verra rimosso per tutti i partecipanti."
+      );
+      if (confirmed) {
+        onDelete?.();
+      }
+      return;
+    }
+
     Alert.alert(
       "Eliminare evento?",
       "L'evento verra rimosso per tutti i partecipanti.",
@@ -135,7 +145,6 @@ export function EventDetailScreen({
 
           <View style={styles.infoGrid}>
             <InfoCell icon="calendar" label="Quando" value={`${event.date} · ${event.time}`} />
-            <InfoCell icon="map-pin" label="Dove" value={event.place} />
             <InfoCell icon="users" label="Posti" value={seatsLabel} />
             <InfoCell icon="credit-card" label="Costo" value={priceLabel} />
           </View>

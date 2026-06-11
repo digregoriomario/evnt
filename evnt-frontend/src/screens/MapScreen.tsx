@@ -88,7 +88,12 @@ function formatSeats(event: EvntEvent) {
   return event.capacity ? `${event.participants}/${event.capacity} posti` : "Posti illimitati";
 }
 
+function radiusEventLabel(radiusKm: number) {
+  return radiusKm === 0 ? "tutti gli eventi" : `eventi entro ${radiusKm} km`;
+}
+
 function zoomFromRadius(radiusKm: number) {
+  if (radiusKm <= 0) return 6;
   if (radiusKm <= 1) return 15;
   if (radiusKm <= 3) return 14;
   if (radiusKm <= 5) return 13;
@@ -182,6 +187,7 @@ export function MapScreen({
     eventDistances,
     filteredEvents,
     hasDeviceLocation,
+    radiusFilterEnabled,
     radiusCenter,
     showLocationFallbackNotice,
     usesCityFallback
@@ -251,8 +257,9 @@ export function MapScreen({
           <View style={styles.headerCopy}>
             <Text style={styles.title}>Mappa eventi</Text>
             <Text style={styles.subtitle}>
-              {filteredEvents.length} eventi entro {filters.radiusKm} km
-              {usesCityFallback ? ` a ${user.city}` : ""}
+              {usesCityFallback
+                ? `${filteredEvents.length} eventi a ${user.city}`
+                : `${filteredEvents.length} ${radiusEventLabel(filters.radiusKm)}`}
             </Text>
           </View>
           <Pressable
@@ -287,7 +294,7 @@ export function MapScreen({
           onSelectEvent={selectEvent}
           onToggleFavorite={onToggleFavorite}
           radiusCenter={radiusCenter}
-          radiusKm={filters.radiusKm}
+          radiusKm={radiusFilterEnabled ? filters.radiusKm : 0}
           registrations={registrations}
           selectedEvent={selectedEvent}
         />
@@ -298,9 +305,13 @@ export function MapScreen({
               <Ionicons color={colors.ink} name="map-outline" size={22} />
             </View>
             <View style={styles.emptyCopy}>
-              <Text style={styles.emptyTitle}>Non ci sono eventi entro questo raggio</Text>
+              <Text style={styles.emptyTitle}>
+                {usesCityFallback ? `Non ci sono eventi a ${user.city}` : "Non ci sono eventi entro questo raggio"}
+              </Text>
               <Text style={styles.emptyText}>
-                Prova ad aumentare il raggio d'azione o a cambiare categoria.
+                {usesCityFallback
+                  ? "Cambia categoria o aggiorna la citta nel profilo."
+                  : "Prova ad aumentare il raggio d'azione o a cambiare categoria."}
               </Text>
             </View>
           </View>
@@ -333,7 +344,7 @@ export function MapScreen({
             onSelectEvent={selectEvent}
             onToggleFavorite={onToggleFavorite}
             radiusCenter={radiusCenter}
-            radiusKm={filters.radiusKm}
+            radiusKm={radiusFilterEnabled ? filters.radiusKm : 0}
             registrations={registrations}
             selectedEvent={selectedEvent}
           />
@@ -349,6 +360,7 @@ export function MapScreen({
                 onReset={onResetFilters}
                 price={filters.price}
                 query={filters.query}
+                radiusDisabled={!radiusFilterEnabled}
                 radiusKm={filters.radiusKm}
                 radiusOptions={[...eventRadiusOptions]}
               />
@@ -367,6 +379,7 @@ export function MapScreen({
         onReset={onResetFilters}
         price={filters.price}
         query={filters.query}
+        radiusDisabled={!radiusFilterEnabled}
         radiusKm={filters.radiusKm}
         radiusOptions={[...eventRadiusOptions]}
         visible={!fullscreenOpen && filtersOpen}
@@ -466,6 +479,11 @@ function WebLeafletMap({
     }
 
     radiusCircleRef.current?.remove();
+    radiusCircleRef.current = null;
+    if (radiusKm <= 0) {
+      return;
+    }
+
     radiusCircleRef.current = L.circle(toLatLng(radiusCenter), {
       color: "rgba(37, 99, 235, 0.35)",
       fillColor: "rgba(37, 99, 235, 0.10)",

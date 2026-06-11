@@ -12,7 +12,7 @@ import {
   View
 } from "react-native";
 
-import { distanceBetweenKm, reverseGeocodeWorldwide, searchPlacesWorldwide } from "../api/geocoding";
+import { distanceBetweenKm, reverseGeocodeItalianPlace, searchItalianPlaces } from "../api/geocoding";
 import { DateTimePickerField } from "../components/DateTimePickerField";
 import { FormField } from "../components/FormField";
 import { PillButton } from "../components/PillButton";
@@ -20,7 +20,7 @@ import { PlacePickerMap } from "../components/PlacePickerMap";
 import { findCitySuggestion } from "../data/cities";
 import {
   categoryColors,
-  categoryDefaultImages,
+  getDefaultEventImage,
   categorySoftColors,
   eventSubcategories,
   getEventSubcategoryLabel
@@ -30,11 +30,32 @@ import { colors, radius, shadow, spacing } from "../theme";
 import { Category, ChatMode, Coordinates, EvntEvent, UserProfile } from "../types";
 
 type CreateEventScreenProps = {
+  draft?: CreateEventDraft | null;
   initialEvent?: EvntEvent;
   onCancel?: () => void;
   user: UserProfile;
   onCreate: (event: EvntEvent) => boolean | void;
+  onDraftChange?: (draft: CreateEventDraft | null) => void;
   onUpdate?: (event: EvntEvent) => boolean | void;
+};
+
+export type CreateEventDraft = {
+  address: string;
+  capacity: string;
+  category: Category;
+  chatMode: ChatMode;
+  countCreator: boolean;
+  customSubcategory: string;
+  date: string;
+  description: string;
+  manualCoordinates: Coordinates | null;
+  place: string;
+  price: string;
+  selectedPlace: PlaceSuggestion | null;
+  selectedSubcategory: string;
+  step: number;
+  time: string;
+  title: string;
 };
 
 type CreateField =
@@ -154,33 +175,62 @@ function dateTimeFromEvent(event?: EvntEvent) {
     : { date: toIsoDate(parsed), time: toTimeValue(parsed) };
 }
 
-export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUpdate }: CreateEventScreenProps) {
+function initialSubcategoryForDraft(type: EventTypeOption, draft?: CreateEventDraft | null) {
+  const draftSubcategory = draft?.selectedSubcategory;
+  if (
+    draftSubcategory &&
+    (draftSubcategory === customSubcategoryOption || eventSubcategories[type.category].includes(draftSubcategory))
+  ) {
+    return draftSubcategory;
+  }
+
+  return eventSubcategories[type.category][0];
+}
+
+export function CreateEventScreen({
+  draft,
+  initialEvent,
+  onCancel,
+  user,
+  onCreate,
+  onDraftChange,
+  onUpdate
+}: CreateEventScreenProps) {
   const editing = Boolean(initialEvent);
-  const [step, setStep] = useState(0);
-  const [selectedType, setSelectedType] = useState(() => eventTypeForCategory(initialEvent?.category));
+  const initialDraft = editing ? undefined : draft ?? undefined;
+  const [step, setStep] = useState(initialDraft?.step ?? 0);
+  const [selectedType, setSelectedType] = useState(() =>
+    eventTypeForCategory(initialEvent?.category ?? initialDraft?.category)
+  );
   const [selectedSubcategory, setSelectedSubcategory] = useState(() => {
-    const type = eventTypeForCategory(initialEvent?.category);
-    return eventSubcategories[type.category][0];
+    const type = eventTypeForCategory(initialEvent?.category ?? initialDraft?.category);
+    return initialSubcategoryForDraft(type, initialDraft);
   });
-  const [customSubcategory, setCustomSubcategory] = useState("");
+  const [customSubcategory, setCustomSubcategory] = useState(initialDraft?.customSubcategory ?? "");
   const [subcategorySelectOpen, setSubcategorySelectOpen] = useState(false);
-  const [title, setTitle] = useState(initialEvent?.title ?? "");
-  const [description, setDescription] = useState(initialEvent?.description ?? "");
-  const [place, setPlace] = useState(initialEvent?.place ?? "");
-  const [address, setAddress] = useState(initialEvent?.address ?? "");
-  const [selectedPlace, setSelectedPlace] = useState<PlaceSuggestion | null>(null);
-  const [manualCoordinates, setManualCoordinates] = useState<Coordinates | null>(initialEvent?.coordinates ?? null);
+  const [title, setTitle] = useState(initialEvent?.title ?? initialDraft?.title ?? "");
+  const [description, setDescription] = useState(initialEvent?.description ?? initialDraft?.description ?? "");
+  const [place, setPlace] = useState(initialEvent?.place ?? initialDraft?.place ?? "");
+  const [address, setAddress] = useState(initialEvent?.address ?? initialDraft?.address ?? "");
+  const [selectedPlace, setSelectedPlace] = useState<PlaceSuggestion | null>(initialDraft?.selectedPlace ?? null);
+  const [manualCoordinates, setManualCoordinates] = useState<Coordinates | null>(
+    initialEvent?.coordinates ?? initialDraft?.manualCoordinates ?? null
+  );
   const [placeMapOpen, setPlaceMapOpen] = useState(false);
   const [placeSuggestionsOpen, setPlaceSuggestionsOpen] = useState(false);
   const [remotePlaceSuggestions, setRemotePlaceSuggestions] = useState<PlaceSuggestion[]>([]);
   const [placeSearching, setPlaceSearching] = useState(false);
   const [reverseGeocoding, setReverseGeocoding] = useState(false);
-  const [date, setDate] = useState(() => dateTimeFromEvent(initialEvent).date);
-  const [time, setTime] = useState(() => dateTimeFromEvent(initialEvent).time);
-  const [capacity, setCapacity] = useState(initialEvent?.capacity ? String(initialEvent.capacity) : "");
-  const [countCreator, setCountCreator] = useState(initialEvent?.creatorCountsAsParticipant ?? true);
-  const [price, setPrice] = useState(initialEvent?.price ? String(initialEvent.price) : "");
-  const [chatMode, setChatMode] = useState<ChatMode>(initialEvent?.chatMode ?? "Gruppo aperto");
+  const [date, setDate] = useState(() => initialDraft?.date ?? dateTimeFromEvent(initialEvent).date);
+  const [time, setTime] = useState(() => initialDraft?.time ?? dateTimeFromEvent(initialEvent).time);
+  const [capacity, setCapacity] = useState(
+    initialEvent?.capacity ? String(initialEvent.capacity) : initialDraft?.capacity ?? ""
+  );
+  const [countCreator, setCountCreator] = useState(
+    initialEvent?.creatorCountsAsParticipant ?? initialDraft?.countCreator ?? true
+  );
+  const [price, setPrice] = useState(initialEvent?.price ? String(initialEvent.price) : initialDraft?.price ?? "");
+  const [chatMode, setChatMode] = useState<ChatMode>(initialEvent?.chatMode ?? initialDraft?.chatMode ?? "Gruppo aperto");
   const [formError, setFormError] = useState("");
   const [fieldErrors, setFieldErrors] = useState<CreateFieldErrors>({});
   const [publishing, setPublishing] = useState(false);
@@ -211,33 +261,40 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
   const addressInputValue = address || place;
 
   useEffect(() => {
-    const type = eventTypeForCategory(initialEvent?.category);
+    const draftSource = initialEvent ? undefined : draft ?? undefined;
+    const type = eventTypeForCategory(initialEvent?.category ?? draftSource?.category);
     const nextDateTime = dateTimeFromEvent(initialEvent);
     const nextSubcategory = initialEvent ? getEventSubcategoryLabel(initialEvent) : eventSubcategories[type.category][0];
     const knownSubcategory = eventSubcategories[type.category].includes(nextSubcategory);
 
-    setStep(0);
+    setStep(draftSource?.step ?? 0);
     setSelectedType(type);
-    setSelectedSubcategory(knownSubcategory ? nextSubcategory : customSubcategoryOption);
-    setCustomSubcategory(knownSubcategory ? "" : nextSubcategory);
+    setSelectedSubcategory(
+      initialEvent
+        ? knownSubcategory
+          ? nextSubcategory
+          : customSubcategoryOption
+        : initialSubcategoryForDraft(type, draftSource)
+    );
+    setCustomSubcategory(initialEvent ? (knownSubcategory ? "" : nextSubcategory) : draftSource?.customSubcategory ?? "");
     setSubcategorySelectOpen(false);
-    setTitle(initialEvent?.title ?? "");
-    setDescription(initialEvent?.description ?? "");
-    setPlace(initialEvent?.place ?? "");
-    setAddress(initialEvent?.address ?? "");
-    setSelectedPlace(null);
-    setManualCoordinates(initialEvent?.coordinates ?? null);
+    setTitle(initialEvent?.title ?? draftSource?.title ?? "");
+    setDescription(initialEvent?.description ?? draftSource?.description ?? "");
+    setPlace(initialEvent?.place ?? draftSource?.place ?? "");
+    setAddress(initialEvent?.address ?? draftSource?.address ?? "");
+    setSelectedPlace(draftSource?.selectedPlace ?? null);
+    setManualCoordinates(initialEvent?.coordinates ?? draftSource?.manualCoordinates ?? null);
     setPlaceMapOpen(false);
     setPlaceSuggestionsOpen(false);
     setRemotePlaceSuggestions([]);
     setPlaceSearching(false);
     setReverseGeocoding(false);
-    setDate(nextDateTime.date);
-    setTime(nextDateTime.time);
-    setCapacity(initialEvent?.capacity ? String(initialEvent.capacity) : "");
-    setCountCreator(initialEvent?.creatorCountsAsParticipant ?? true);
-    setPrice(initialEvent?.price ? String(initialEvent.price) : "");
-    setChatMode(initialEvent?.chatMode ?? "Gruppo aperto");
+    setDate(draftSource?.date ?? nextDateTime.date);
+    setTime(draftSource?.time ?? nextDateTime.time);
+    setCapacity(initialEvent?.capacity ? String(initialEvent.capacity) : draftSource?.capacity ?? "");
+    setCountCreator(initialEvent?.creatorCountsAsParticipant ?? draftSource?.countCreator ?? true);
+    setPrice(initialEvent?.price ? String(initialEvent.price) : draftSource?.price ?? "");
+    setChatMode(initialEvent?.chatMode ?? draftSource?.chatMode ?? "Gruppo aperto");
     setFormError("");
     setFieldErrors({});
     setPublishing(false);
@@ -253,6 +310,50 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
   }, [selectedSubcategories, selectedSubcategory]);
 
   useEffect(() => {
+    if (editing) {
+      return;
+    }
+
+    onDraftChange?.({
+      address,
+      capacity,
+      category: selectedType.category,
+      chatMode,
+      countCreator,
+      customSubcategory,
+      date,
+      description,
+      manualCoordinates,
+      place,
+      price,
+      selectedPlace,
+      selectedSubcategory,
+      step,
+      time,
+      title
+    });
+  }, [
+    address,
+    capacity,
+    chatMode,
+    countCreator,
+    customSubcategory,
+    date,
+    description,
+    editing,
+    manualCoordinates,
+    onDraftChange,
+    place,
+    price,
+    selectedPlace,
+    selectedSubcategory,
+    selectedType.category,
+    step,
+    time,
+    title
+  ]);
+
+  useEffect(() => {
     const normalized = addressInputValue.trim();
     if (!placeSuggestionsOpen || normalized.length < 2) {
       setRemotePlaceSuggestions([]);
@@ -263,7 +364,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     let cancelled = false;
     setPlaceSearching(true);
     const timeout = setTimeout(() => {
-      searchPlacesWorldwide(normalized, originCoordinates)
+      searchItalianPlaces(normalized, originCoordinates)
         .then((suggestions) => {
           if (!cancelled) {
             setRemotePlaceSuggestions(suggestions);
@@ -427,6 +528,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     setFormError("");
     setFieldErrors({});
     setPublishing(false);
+    onDraftChange?.(null);
   };
 
   const publish = async () => {
@@ -447,7 +549,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
       selectedPlace?.address === pendingMapAddressLabel ? null : selectedPlace;
 
     if (!resolvedPlace && manualCoordinates) {
-      resolvedPlace = await reverseGeocodeWorldwide(manualCoordinates, originCoordinates).catch(() => null);
+      resolvedPlace = await reverseGeocodeItalianPlace(manualCoordinates, originCoordinates).catch(() => null);
       if (resolvedPlace) {
         setSelectedPlace(resolvedPlace);
         setManualCoordinates(resolvedPlace.coordinates);
@@ -461,7 +563,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
       const [fallbackPlace] =
         filteredPlaceSuggestions.length > 0
           ? filteredPlaceSuggestions
-          : await searchPlacesWorldwide(normalizedAddress, originCoordinates).catch(() => []);
+          : await searchItalianPlaces(normalizedAddress, originCoordinates).catch(() => []);
       resolvedPlace = fallbackPlace ?? null;
 
       if (resolvedPlace) {
@@ -509,7 +611,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
       image:
         initialEvent?.category === selectedType.category && initialEvent.image
           ? initialEvent.image
-          : categoryDefaultImages[selectedType.category],
+          : getDefaultEventImage(selectedType.category, subcategory),
       description: description.trim(),
       organizer: user.name,
       chatMode,
@@ -540,7 +642,6 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
       setPublishing(false);
       return;
     }
-    resetForm();
   };
 
   const goBack = () => {
@@ -596,7 +697,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     const manualPlace: PlaceSuggestion = {
       address: pendingMapAddressLabel,
       city: user.city,
-      countryCode: undefined,
+      countryCode: "IT",
       coordinates,
       distanceKm: originCoordinates ? distanceBetweenKm(originCoordinates, coordinates) : 0,
       name: fallbackName
@@ -609,7 +710,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
     clearFieldError("place");
     setReverseGeocoding(true);
 
-    void reverseGeocodeWorldwide(coordinates, originCoordinates)
+    void reverseGeocodeItalianPlace(coordinates, originCoordinates)
       .then((resolvedPlace) => {
         if (reverseLookupId.current !== lookupId) {
           return;
@@ -617,7 +718,7 @@ export function CreateEventScreen({ initialEvent, onCancel, user, onCreate, onUp
 
         if (!resolvedPlace) {
           setSelectedPlace(null);
-          setFormError("Sposta il POI su un indirizzo valido o scegli un suggerimento.");
+          setFormError("Sposta il POI su un indirizzo in Italia o scegli un suggerimento.");
           return;
         }
 

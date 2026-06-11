@@ -50,6 +50,9 @@ function regionFromCoordinates(coordinates: LatLng, delta = 0.035): Region {
 }
 
 function regionFromRadius(coordinates: LatLng, radiusKm: number): Region {
+  if (radiusKm <= 0) {
+    return regionFromCoordinates(coordinates, 4.5);
+  }
   const delta = Math.max(0.018, (radiusKm * 2.6) / 111);
   return regionFromCoordinates(coordinates, delta);
 }
@@ -67,6 +70,10 @@ function formatPrice(price: number) {
 
 function formatSeats(event: EvntEvent) {
   return event.capacity ? `${event.participants}/${event.capacity} posti` : "Posti illimitati";
+}
+
+function radiusEventLabel(radiusKm: number) {
+  return radiusKm === 0 ? "tutti gli eventi" : `eventi entro ${radiusKm} km`;
 }
 
 export function MapScreen({
@@ -95,6 +102,7 @@ export function MapScreen({
     eventDistances,
     filteredEvents,
     hasDeviceLocation,
+    radiusFilterEnabled,
     radiusCenter,
     showLocationFallbackNotice,
     usesCityFallback
@@ -179,8 +187,8 @@ export function MapScreen({
       return;
     }
 
-    mapRef.current?.animateToRegion(regionFromRadius(radiusCenter, filters.radiusKm), 400);
-  }, [filteredEvents.length, filters.radiusKm, mapReady, radiusCenter]);
+    mapRef.current?.animateToRegion(regionFromRadius(radiusCenter, radiusFilterEnabled ? filters.radiusKm : 0), 400);
+  }, [filteredEvents.length, filters.radiusKm, mapReady, radiusCenter, radiusFilterEnabled]);
 
   const closeFullscreen = () => {
     setFullscreenOpen(false);
@@ -194,8 +202,9 @@ export function MapScreen({
           <View style={styles.headerCopy}>
             <Text style={styles.title}>Mappa eventi</Text>
             <Text style={styles.subtitle}>
-              {filteredEvents.length} eventi entro {filters.radiusKm} km
-              {usesCityFallback ? ` a ${user.city}` : ""}
+              {usesCityFallback
+                ? `${filteredEvents.length} eventi a ${user.city}`
+                : `${filteredEvents.length} ${radiusEventLabel(filters.radiusKm)}`}
             </Text>
           </View>
           <Pressable
@@ -228,13 +237,15 @@ export function MapScreen({
           style={styles.map}
           userInterfaceStyle="light"
         >
-          <Circle
-            center={radiusCenter}
-            fillColor="rgba(37, 99, 235, 0.10)"
-            radius={filters.radiusKm * 1000}
-            strokeColor="rgba(37, 99, 235, 0.35)"
-            strokeWidth={2}
-          />
+          {radiusFilterEnabled && filters.radiusKm > 0 ? (
+            <Circle
+              center={radiusCenter}
+              fillColor="rgba(37, 99, 235, 0.10)"
+              radius={filters.radiusKm * 1000}
+              strokeColor="rgba(37, 99, 235, 0.35)"
+              strokeWidth={2}
+            />
+          ) : null}
           {filteredEvents.map((event) => {
             const isSelected = selectedEvent?.id === event.id;
             return (
@@ -300,9 +311,13 @@ export function MapScreen({
             <Ionicons color={colors.ink} name="map-outline" size={22} />
           </View>
           <View style={styles.emptyCopy}>
-            <Text style={styles.emptyTitle}>Non ci sono eventi entro questo raggio</Text>
+            <Text style={styles.emptyTitle}>
+              {usesCityFallback ? `Non ci sono eventi a ${user.city}` : "Non ci sono eventi entro questo raggio"}
+            </Text>
             <Text style={styles.emptyText}>
-              Prova ad aumentare il raggio d'azione o a cambiare categoria.
+              {usesCityFallback
+                ? "Cambia categoria o aggiorna la citta nel profilo."
+                : "Prova ad aumentare il raggio d'azione o a cambiare categoria."}
             </Text>
           </View>
         </View>
@@ -323,7 +338,7 @@ export function MapScreen({
       <Modal animationType="fade" onRequestClose={closeFullscreen} visible={fullscreenOpen}>
         <View style={styles.fullscreenRoot}>
           <MapView
-            initialRegion={regionFromRadius(radiusCenter, filters.radiusKm)}
+            initialRegion={regionFromRadius(radiusCenter, radiusFilterEnabled ? filters.radiusKm : 0)}
             ref={fullscreenMapRef}
             showsCompass={false}
             showsMyLocationButton={false}
@@ -331,13 +346,15 @@ export function MapScreen({
             style={styles.fullscreenMap}
             userInterfaceStyle="light"
           >
-            <Circle
-              center={radiusCenter}
-              fillColor="rgba(37, 99, 235, 0.10)"
-              radius={filters.radiusKm * 1000}
-              strokeColor="rgba(37, 99, 235, 0.35)"
-              strokeWidth={2}
-            />
+            {radiusFilterEnabled && filters.radiusKm > 0 ? (
+              <Circle
+                center={radiusCenter}
+                fillColor="rgba(37, 99, 235, 0.10)"
+                radius={filters.radiusKm * 1000}
+                strokeColor="rgba(37, 99, 235, 0.35)"
+                strokeWidth={2}
+              />
+            ) : null}
             {filteredEvents.map((event) => {
               const isSelected = selectedEvent?.id === event.id;
               return (
@@ -420,6 +437,7 @@ export function MapScreen({
                 onReset={onResetFilters}
                 price={filters.price}
                 query={filters.query}
+                radiusDisabled={!radiusFilterEnabled}
                 radiusKm={filters.radiusKm}
                 radiusOptions={[...eventRadiusOptions]}
               />
@@ -438,6 +456,7 @@ export function MapScreen({
         onReset={onResetFilters}
         price={filters.price}
         query={filters.query}
+        radiusDisabled={!radiusFilterEnabled}
         radiusKm={filters.radiusKm}
         radiusOptions={[...eventRadiusOptions]}
         visible={!fullscreenOpen && filtersOpen}
