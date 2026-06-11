@@ -143,22 +143,23 @@ const styles = StyleSheet.create({
     ...shadow
   },
   compactCard: {
-    marginBottom: spacing.md
+    marginBottom: spacing.md,
+    minHeight: 156
   },
   imageButton: {
     backgroundColor: colors.surfaceMuted,
     minHeight: 148,
+    overflow: "hidden",
     position: "relative",
     width: 124
   },
   compactImageButton: {
-    minHeight: 112,
+    minHeight: 156,
     width: 96
   },
   image: {
+    ...StyleSheet.absoluteFillObject,
     backgroundColor: colors.surfaceMuted,
-    height: "100%",
-    width: "100%"
   },
   imageBadge: {
     alignItems: "center",
