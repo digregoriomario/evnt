@@ -8,6 +8,11 @@ Evnt/
 └── evnt-frontend/  # app Expo / React Native / Web
 ```
 
+## Documentazione
+
+La documentazione tecnica completa del progetto è disponibile su Google Drive:
+[Documentazione Evnt](https://drive.google.com/drive/folders/1rA5eZXwl1qi7YixnvFl7J1aURynljoFk?usp=drive_link)
+
 ## Prerequisiti
 
 - Node.js LTS compatibile con il progetto: `>=20 <26`.
