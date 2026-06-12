@@ -992,7 +992,8 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.md,
-    marginBottom: spacing.lg,
+    marginBottom: spacing.xxl,
+    marginTop: -spacing.xxl,
     padding: spacing.md
   },
   emptyIcon: {

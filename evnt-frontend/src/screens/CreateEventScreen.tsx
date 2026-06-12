@@ -14,6 +14,7 @@ import {
 
 import { distanceBetweenKm, reverseGeocodeItalianPlace, searchItalianPlaces } from "../api/geocoding";
 import { DateTimePickerField } from "../components/DateTimePickerField";
+import { EventCard } from "../components/EventCard";
 import { FormField } from "../components/FormField";
 import { PillButton } from "../components/PillButton";
 import { PlacePickerMap } from "../components/PlacePickerMap";
@@ -239,10 +240,7 @@ export function CreateEventScreen({
   const parsedPrice = useMemo(() => Number.parseFloat(price.replace(",", ".")), [price]);
   const parsedCapacity = useMemo(() => Number.parseInt(capacity, 10), [capacity]);
   const isFree = !Number.isFinite(parsedPrice) || parsedPrice <= 0;
-  const capacityLabel = Number.isFinite(parsedCapacity) && parsedCapacity > 0 ? String(parsedCapacity) : "Illimitati";
-  const priceLabel = isFree ? "Gratis" : `EUR ${parsedPrice}`;
   const selectedAccent = categoryColors[selectedType.category];
-  const selectedSoft = categorySoftColors[selectedType.category];
   const selectedSubcategories = eventSubcategories[selectedType.category];
   const subcategoryOptions = useMemo(
     () => [...selectedSubcategories, customSubcategoryOption],
@@ -259,6 +257,74 @@ export function CreateEventScreen({
   const originCoordinates = user.cityCoordinates ?? findCitySuggestion(user.city)?.coordinates;
   const placeCoordinates = selectedPlace?.coordinates ?? manualCoordinates ?? initialEvent?.coordinates ?? originCoordinates;
   const addressInputValue = address || place;
+  const previewEvent = useMemo<EvntEvent>(() => {
+    const previewSubcategory = effectiveSubcategory || subcategoryDisplay;
+    const previewAddress = addressInputValue.trim() || "Indirizzo";
+    const previewPlace = place.trim() || selectedPlace?.name || previewAddress;
+    const previewCoordinates = placeCoordinates ?? originCoordinates ?? { latitude: 41.9028, longitude: 12.4964 };
+
+    return {
+      id: initialEvent?.id ?? "preview-event",
+      title: title.trim() || "Titolo evento",
+      category: selectedType.category,
+      date: date ? formatEventDateLabel(date) : "Data",
+      time: time.trim() || "--:--",
+      place: previewPlace,
+      city: selectedPlace?.city ?? initialEvent?.city ?? user.city,
+      address: previewAddress,
+      province: selectedPlace?.province ?? initialEvent?.province,
+      region: selectedPlace?.region ?? initialEvent?.region,
+      postcode: selectedPlace?.postcode ?? initialEvent?.postcode,
+      countryCode: selectedPlace?.countryCode ?? initialEvent?.countryCode ?? "IT",
+      price: isFree ? 0 : parsedPrice,
+      distanceKm: selectedPlace?.distanceKm ?? initialEvent?.distanceKm ?? 0,
+      affinity: initialEvent?.affinity ?? 80,
+      popularity: initialEvent?.popularity ?? 50,
+      participants: initialEvent?.participants ?? (countCreator ? 1 : 0),
+      capacity: Number.isFinite(parsedCapacity) && parsedCapacity > 0 ? parsedCapacity : null,
+      image:
+        initialEvent?.category === selectedType.category && initialEvent.image
+          ? initialEvent.image
+          : getDefaultEventImage(selectedType.category, previewSubcategory),
+      description: description.trim() || "Descrizione evento",
+      organizer: user.name,
+      chatMode,
+      tags: [
+        selectedType.label.toLowerCase(),
+        previewSubcategory.toLowerCase(),
+        `subcategory:${previewSubcategory}`,
+        user.city ? `city:${user.city}` : ""
+      ].filter(Boolean),
+      coordinates: previewCoordinates,
+      dateTimeIso: eventDateTime?.toISOString(),
+      creatorCountsAsParticipant: editing ? initialEvent?.creatorCountsAsParticipant : countCreator,
+      status: initialEvent?.status,
+      subcategory: previewSubcategory
+    };
+  }, [
+    addressInputValue,
+    chatMode,
+    countCreator,
+    date,
+    description,
+    editing,
+    effectiveSubcategory,
+    eventDateTime,
+    initialEvent,
+    isFree,
+    originCoordinates,
+    parsedCapacity,
+    parsedPrice,
+    place,
+    placeCoordinates,
+    selectedPlace,
+    selectedType,
+    subcategoryDisplay,
+    time,
+    title,
+    user.city,
+    user.name
+  ]);
 
   useEffect(() => {
     const draftSource = initialEvent ? undefined : draft ?? undefined;
@@ -760,7 +826,7 @@ export function CreateEventScreen({
         <Pressable accessibilityLabel="Indietro" accessibilityRole="button" onPress={goBack} style={styles.backButton}>
           <Ionicons color={colors.ink} name="arrow-back" size={24} />
         </Pressable>
-        <Text style={styles.headerTitle}>{editing ? "Modifica evento" : "Nuovo evento"} • {step + 1}/3</Text>
+        <Text style={styles.headerTitle}>{editing ? "Modifica evento" : "Nuovo evento"}</Text>
         <Pressable
           accessibilityLabel="Annulla creazione evento"
           accessibilityRole="button"
@@ -1039,23 +1105,14 @@ export function CreateEventScreen({
 
         {step === 2 && (
           <View style={styles.reviewStack}>
-            <View style={[styles.previewCard, { backgroundColor: selectedSoft }]}>
-              <Text style={styles.previewEmoji}>{selectedType.emoji}</Text>
-              <PillButton accent={selectedAccent} label={effectiveSubcategory || subcategoryDisplay} soft={colors.surface} />
-              <Text style={styles.previewTitle}>{title || "Titolo evento"}</Text>
-              <Text style={styles.previewMeta}>
-                {addressInputValue || place || "Indirizzo"} · {priceLabel}
-              </Text>
-            </View>
-
-            <View style={styles.summaryCard}>
-              <SummaryRow label="Tipo evento" value={`${effectiveSubcategory || subcategoryDisplay} ${selectedType.emoji}`} />
-              <SummaryRow label="Data" value={date || "-"} />
-              <SummaryRow label="Orario" value={time || "-"} />
-              <SummaryRow label="Indirizzo" value={addressInputValue || place || "-"} />
-              <SummaryRow label="Posti" value={capacityLabel} />
-              <SummaryRow label="Costo" value={priceLabel} />
-              <SummaryRow label="Chat" value={chatMode === "Gruppo aperto" ? "Gruppo" : "Annunci"} last />
+            <View pointerEvents="none" style={styles.previewWrapper}>
+              <EventCard
+                event={previewEvent}
+                favorite={false}
+                onPress={() => undefined}
+                onToggleFavorite={() => undefined}
+                registered={false}
+              />
             </View>
           </View>
         )}
@@ -1070,7 +1127,7 @@ export function CreateEventScreen({
           style={[styles.primaryButton, publishing && styles.disabledPrimary]}
         >
           <Text style={styles.primaryText}>
-            {publishing ? "Verifico luogo..." : step === 2 ? (editing ? "✓ Salva modifiche" : "✓ Pubblica evento") : "Avanti →"}
+            {publishing ? "Verifico luogo..." : step === 2 ? (editing ? "Salva modifiche" : "Pubblica evento") : "Avanti"}
           </Text>
         </Pressable>
       </View>
@@ -1176,21 +1233,6 @@ function ChatChoice({ active, icon, onPress, subtitle, title }: ChatChoiceProps)
         <Text style={styles.chatSubtitle}>{subtitle}</Text>
       </View>
     </Pressable>
-  );
-}
-
-type SummaryRowProps = {
-  label: string;
-  last?: boolean;
-  value: string;
-};
-
-function SummaryRow({ label, last = false, value }: SummaryRowProps) {
-  return (
-    <View style={[styles.summaryRow, last && styles.summaryRowLast]}>
-      <Text style={styles.summaryLabel}>{label}</Text>
-      <Text style={styles.summaryValue}>{value}</Text>
-    </View>
   );
 }
 
@@ -1512,59 +1554,13 @@ const styles = StyleSheet.create({
     marginTop: 4
   },
   reviewStack: {
-    gap: spacing.xl
+    gap: spacing.md
   },
-  previewCard: {
-    alignItems: "center",
-    borderRadius: 22,
-    gap: spacing.sm,
-    padding: spacing.xxl
-  },
-  previewEmoji: {
-    fontSize: 52
-  },
-  previewTitle: {
-    color: colors.ink,
-    fontSize: 24,
-    fontWeight: "900",
-    textAlign: "center"
-  },
-  previewMeta: {
-    color: colors.muted,
-    fontSize: 16,
-    fontWeight: "800",
-    textAlign: "center"
-  },
-  summaryCard: {
-    backgroundColor: "#FAFAF8",
-    borderRadius: 18,
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.lg
-  },
-  summaryRow: {
-    alignItems: "center",
-    borderBottomColor: colors.line,
-    borderBottomWidth: 1,
-    flexDirection: "row",
-    justifyContent: "space-between",
-    minHeight: 58
-  },
-  summaryRowLast: {
-    borderBottomWidth: 0
-  },
-  summaryLabel: {
-    color: colors.muted,
-    fontSize: 18,
-    fontWeight: "700"
-  },
-  summaryValue: {
-    color: colors.ink,
-    flex: 1,
-    fontSize: 18,
-    fontWeight: "900",
-    textAlign: "right"
+  previewWrapper: {
+    alignSelf: "stretch"
   },
   bottomAction: {
+    alignItems: "flex-end",
     backgroundColor: colors.background,
     borderTopColor: colors.line,
     borderTopWidth: 1,
@@ -1579,7 +1575,9 @@ const styles = StyleSheet.create({
     backgroundColor: createPrimary,
     borderRadius: radius.md,
     justifyContent: "center",
-    minHeight: 62,
+    minHeight: 50,
+    minWidth: 142,
+    paddingHorizontal: spacing.xl,
     ...shadow
   },
   disabledPrimary: {
@@ -1587,7 +1585,7 @@ const styles = StyleSheet.create({
   },
   primaryText: {
     color: colors.surface,
-    fontSize: 18,
+    fontSize: 15,
     fontWeight: "900"
   }
 });
