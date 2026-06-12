@@ -15,9 +15,10 @@
     "db:up": "docker compose up -d",
     "db:down": "docker compose down",
     "prisma:generate": "prisma generate --no-hints",
+    "prisma:drop-geom": "prisma db execute --file prisma/sql/drop-generated-geom.sql --schema prisma/schema.prisma",
     "prisma:push": "prisma db push",
     "prisma:postgis": "prisma db execute --file prisma/sql/postgis.sql --schema prisma/schema.prisma",
-    "db:setup": "npm run prisma:push && npm run prisma:postgis",
+    "db:setup": "npm run prisma:drop-geom && npm run prisma:push && npm run prisma:postgis",
     "bootstrap": "tsx prisma/bootstrap.ts",
     "seed": "tsx prisma/seed.ts",
     "seed:demo": "tsx prisma/demo-accounts.ts"

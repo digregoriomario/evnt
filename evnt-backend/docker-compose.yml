@@ -38,7 +38,7 @@ services:
       PRISMA_HIDE_UPDATE_MESSAGE: "true"
     ports:
       - "4000:4000"
-    command: sh -c "npx prisma db push --skip-generate && npx prisma db execute --file prisma/sql/postgis.sql --schema prisma/schema.prisma && npx prisma generate --no-hints && npm run bootstrap && npm run dev"
+    command: sh -c "npm run db:setup && npm run prisma:generate && npm run bootstrap && npm run dev"
     volumes:
       - ./src:/app/src
       - ./prisma:/app/prisma
