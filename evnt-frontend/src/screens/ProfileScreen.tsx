@@ -17,10 +17,11 @@ import { EventCard } from "../components/EventCard";
 import { FormField } from "../components/FormField";
 import { IconButton } from "../components/IconButton";
 import { ProfileImagePicker } from "../components/ProfileImagePicker";
-import { searchCitiesWorldwide } from "../api/geocoding";
+import { reverseGeocodeCityWorldwide, searchCitiesWorldwide } from "../api/geocoding";
+import { requestCurrentCoordinates } from "../application/location/currentPosition";
 import { citySuggestions, type CitySuggestion } from "../data/cities";
 import { categories } from "../data/events";
-import { colors, radius, shadow, spacing } from "../theme";
+import { colors, form, radius, shadow, spacing } from "../theme";
 import { Category, EvntEvent, UserProfile } from "../types";
 
 type ProfileScreenProps = {
@@ -67,6 +68,7 @@ export function ProfileScreen({
   const [citySuggestionsOpen, setCitySuggestionsOpen] = useState(false);
   const [remoteCitySuggestions, setRemoteCitySuggestions] = useState<CitySuggestion[]>([]);
   const [citySearching, setCitySearching] = useState(false);
+  const [cityLocating, setCityLocating] = useState(false);
   const [formError, setFormError] = useState("");
   const [saving, setSaving] = useState(false);
   const [expandedSections, setExpandedSections] = useState<Record<ProfileEventSectionKey, boolean>>({
@@ -143,6 +145,7 @@ export function ProfileScreen({
     setCitySuggestionsOpen(false);
     setRemoteCitySuggestions([]);
     setCitySearching(false);
+    setCityLocating(false);
     setFormError("");
     setEditing(true);
   };
@@ -152,6 +155,7 @@ export function ProfileScreen({
     setCitySuggestionsOpen(false);
     setRemoteCitySuggestions([]);
     setCitySearching(false);
+    setCityLocating(false);
     setFormError("");
     setEditing(false);
   };
@@ -172,7 +176,38 @@ export function ProfileScreen({
     setFormError("");
   };
 
-  const resolveItalianCity = async (city: string) => {
+  async function useCurrentCity() {
+    if (cityLocating) {
+      return;
+    }
+
+    setCityLocating(true);
+    const coordinates = await requestCurrentCoordinates();
+    if (!coordinates) {
+      setFormError("Attiva la geolocalizzazione oppure seleziona la citta dai suggerimenti.");
+      setCityLocating(false);
+      return;
+    }
+
+    const currentCity = await reverseGeocodeCityWorldwide(coordinates).catch(() => null);
+    if (!currentCity) {
+      setFormError("Non riesco a leggere la citta da questa posizione. Selezionala manualmente.");
+      setCityLocating(false);
+      return;
+    }
+
+    setDraft((current) => ({
+      ...current,
+      city: currentCity.name,
+      cityCoordinates: currentCity.coordinates
+    }));
+    setRemoteCitySuggestions([]);
+    setCitySuggestionsOpen(false);
+    setFormError("");
+    setCityLocating(false);
+  }
+
+  const resolveCity = async (city: string) => {
     const visibleMatch = findMatchingCitySuggestion(city, filteredCitySuggestions);
     if (visibleMatch) {
       return visibleMatch;
@@ -215,10 +250,10 @@ export function ProfileScreen({
     }
 
     setSaving(true);
-    const exactCity = await resolveItalianCity(normalizedCity);
+    const exactCity = await resolveCity(normalizedCity);
     if (!exactCity) {
       setSaving(false);
-      setFormError("Seleziona una citta italiana dai suggerimenti.");
+      setFormError("Seleziona una citta dai suggerimenti.");
       return;
     }
 
@@ -284,7 +319,7 @@ export function ProfileScreen({
                   setFormError("");
                 }}
                 placeholder="Il tuo nome"
-                placeholderTextColor={colors.muted}
+                placeholderTextColor={form.placeholder.color}
                 style={styles.input}
                 value={draft.name}
               />
@@ -300,11 +335,20 @@ export function ProfileScreen({
                     onChangeText={handleCityChange}
                     onFocus={() => setCitySuggestionsOpen(true)}
                     placeholder="La tua citta"
-                    placeholderTextColor={colors.muted}
+                    placeholderTextColor={form.placeholder.color}
                     style={styles.cityInput}
                     value={draft.city}
                   />
-                  <Ionicons color={draft.cityCoordinates ? colors.green : colors.muted} name="search-outline" size={19} />
+                  <Pressable
+                    accessibilityLabel="Usa la citta attuale"
+                    accessibilityRole="button"
+                    disabled={cityLocating}
+                    hitSlop={8}
+                    onPress={() => void useCurrentCity()}
+                    style={[styles.locateFieldButton, cityLocating && styles.locateFieldButtonDisabled]}
+                  >
+                    <Ionicons color={draft.cityCoordinates ? colors.ink : colors.muted} name="locate-outline" size={19} />
+                  </Pressable>
                 </View>
 
                 {citySuggestionsOpen && filteredCitySuggestions.length > 0 && (
@@ -336,7 +380,7 @@ export function ProfileScreen({
                         <Ionicons color={colors.ink} name="globe-outline" size={17} />
                       </View>
                       <View style={styles.suggestionCopy}>
-                        <Text style={styles.suggestionTitle}>Cerco citta italiane...</Text>
+                        <Text style={styles.suggestionTitle}>Cerco citta...</Text>
                         <Text style={styles.suggestionMeta}>OpenStreetMap</Text>
                       </View>
                     </View>
@@ -350,7 +394,7 @@ export function ProfileScreen({
                 multiline
                 onChangeText={(bio) => setDraft((current) => ({ ...current, bio }))}
                 placeholder="Racconta qualcosa di te..."
-                placeholderTextColor={colors.muted}
+                placeholderTextColor={form.placeholder.color}
                 style={[styles.input, styles.textArea]}
                 value={draft.bio}
               />
@@ -661,10 +705,9 @@ const styles = StyleSheet.create({
     gap: spacing.sm
   },
   cityInput: {
-    color: colors.ink,
     flex: 1,
-    fontSize: 16,
-    minHeight: 50
+    minHeight: 50,
+    ...form.fieldText
   },
   cityInputWrap: {
     alignItems: "center",
@@ -676,6 +719,17 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     minHeight: 56,
     paddingHorizontal: spacing.md
+  },
+  locateFieldButton: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 18,
+    height: 36,
+    justifyContent: "center",
+    width: 36
+  },
+  locateFieldButtonDisabled: {
+    opacity: 0.55
   },
   suggestionList: {
     backgroundColor: colors.surface,
@@ -721,10 +775,9 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
-    color: colors.ink,
-    fontSize: 16,
     minHeight: 56,
-    paddingHorizontal: spacing.md
+    paddingHorizontal: spacing.md,
+    ...form.fieldText
   },
   textArea: {
     minHeight: 116,

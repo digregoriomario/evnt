@@ -406,12 +406,14 @@ function AppContent() {
   };
 
   const requestUserLocation = useCallback(async (): Promise<Coordinates | null> => {
+    setUserCoordinates(null);
     setLocationStatus("loading");
 
     try {
       if (Platform.OS !== "web") {
         const servicesEnabled = await Location.hasServicesEnabledAsync();
-        if (!servicesEnabled) {
+        const providerStatus = await Location.getProviderStatusAsync();
+        if (!servicesEnabled || providerStatus.locationServicesEnabled === false) {
           setUserCoordinates(null);
           setLocationStatus("unavailable");
           return null;
@@ -423,16 +425,6 @@ function AppContent() {
         setUserCoordinates(null);
         setLocationStatus("denied");
         return null;
-      }
-
-      const lastKnown = await Location.getLastKnownPositionAsync();
-      if (lastKnown) {
-        const coords = {
-          latitude: lastKnown.coords.latitude,
-          longitude: lastKnown.coords.longitude
-        };
-        setUserCoordinates(coords);
-        setLocationStatus("granted");
       }
 
       const current = await Location.getCurrentPositionAsync({
@@ -460,6 +452,20 @@ function AppContent() {
     }
 
     void requestUserLocation();
+  }, [requestUserLocation, user?.email]);
+
+  useEffect(() => {
+    if (!user) {
+      return;
+    }
+
+    const subscription = AppState.addEventListener("change", (state) => {
+      if (state === "active") {
+        void requestUserLocation();
+      }
+    });
+
+    return () => subscription.remove();
   }, [requestUserLocation, user?.email]);
 
   useEffect(() => {

@@ -2,7 +2,7 @@ import DateTimePicker, { type DateTimePickerEvent } from "@react-native-communit
 import { useMemo, useState } from "react";
 import { Platform, Pressable, StyleSheet, Text, View } from "react-native";
 
-import { colors, radius, spacing } from "../theme";
+import { colors, form, radius, spacing } from "../theme";
 
 type DateTimePickerFieldProps = {
   maximumDate?: Date;
@@ -112,7 +112,6 @@ const styles = StyleSheet.create({
     fontWeight: "800"
   },
   placeholder: {
-    color: colors.muted,
-    fontWeight: "700"
+    ...form.placeholder
   }
 });

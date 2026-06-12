@@ -1,7 +1,7 @@
 import { ComponentProps } from "react";
 import { StyleProp, StyleSheet, TextInput, TextStyle, View, ViewStyle } from "react-native";
 
-import { colors, radius, spacing } from "../../theme";
+import { colors, form, radius, spacing } from "../../theme";
 
 type InputProps = ComponentProps<typeof View> & {
   isDisabled?: boolean;
@@ -25,7 +25,7 @@ export function Input({ children, isDisabled, isInvalid, style, ...props }: Inpu
 }
 
 export function InputField({ style, ...props }: InputFieldProps) {
-  return <TextInput placeholderTextColor={colors.muted} style={[styles.field, style]} {...props} />;
+  return <TextInput placeholderTextColor={form.placeholder.color} style={[styles.field, style]} {...props} />;
 }
 
 const styles = StyleSheet.create({
@@ -33,11 +33,9 @@ const styles = StyleSheet.create({
     opacity: 0.6
   },
   field: {
-    color: colors.ink,
     flex: 1,
-    fontSize: 15,
-    fontWeight: "600",
-    minHeight: 44
+    minHeight: 44,
+    ...form.fieldText
   },
   input: {
     alignItems: "center",

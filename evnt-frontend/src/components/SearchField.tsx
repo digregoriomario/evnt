@@ -1,7 +1,7 @@
 import { Ionicons } from "@expo/vector-icons";
 import { Pressable, StyleSheet, TextInput, type StyleProp, type TextInputProps, type ViewStyle, View } from "react-native";
 
-import { colors, radius, spacing } from "../theme";
+import { colors, form, radius, spacing } from "../theme";
 
 type SearchFieldProps = Omit<TextInputProps, "onChangeText" | "placeholder" | "style" | "value"> & {
   accessibilityLabel: string;
@@ -32,7 +32,7 @@ export function SearchField({
         autoCapitalize={autoCapitalize}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={colors.muted}
+        placeholderTextColor={form.placeholder.color}
         style={styles.input}
         value={value}
         {...props}
@@ -48,11 +48,9 @@ export function SearchField({
 
 const styles = StyleSheet.create({
   input: {
-    color: colors.ink,
     flex: 1,
-    fontSize: 16,
-    fontWeight: "700",
-    minHeight: 54
+    minHeight: 54,
+    ...form.fieldText
   },
   wrap: {
     alignItems: "center",

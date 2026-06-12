@@ -1,7 +1,7 @@
 import { createElement, type CSSProperties } from "react";
 import { StyleSheet, Text, View } from "react-native";
 
-import { colors, radius, spacing } from "../theme";
+import { colors, form, radius, spacing } from "../theme";
 
 type DateTimePickerFieldProps = {
   maximumDate?: Date;
@@ -87,12 +87,10 @@ const styles = StyleSheet.create({
     position: "relative"
   },
   placeholder: {
-    color: colors.muted,
-    fontSize: 16,
-    fontWeight: "700",
     left: spacing.md,
     pointerEvents: "none",
-    position: "absolute"
+    position: "absolute",
+    ...form.placeholder
   },
   displayValue: {
     color: colors.ink,

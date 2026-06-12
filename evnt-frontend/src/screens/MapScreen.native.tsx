@@ -120,6 +120,8 @@ export function MapScreen({
 
   const selectedEvent =
     filteredEvents.find((event) => event.id === selectedEventId) ?? filteredEvents[0];
+  const canCenterOnUser = locationStatus === "granted" && userCoordinates !== null && hasDeviceLocation;
+  const mapIsEmpty = filteredEvents.length === 0;
 
   const updateUserLocation = useCallback(async () => {
     const coords = await onRequestLocation();
@@ -128,6 +130,10 @@ export function MapScreen({
       mapRef.current?.animateToRegion(region, 500);
       fullscreenMapRef.current?.animateToRegion(region, 500);
     }
+  }, [onRequestLocation]);
+
+  useEffect(() => {
+    void onRequestLocation();
   }, [onRequestLocation]);
 
   useEffect(() => {
@@ -158,30 +164,6 @@ export function MapScreen({
     mapRef.current?.animateToRegion(region, 450);
     fullscreenMapRef.current?.animateToRegion(region, 450);
   };
-
-  const locationCopy = {
-    denied: {
-      body: `Permesso posizione mancante: mostriamo gli eventi della citta indicata, ${user.city}.`,
-      icon: "location-outline" as const,
-      title: "Posizione non autorizzata"
-    },
-    granted: {
-      body: "Posizione attiva.",
-      icon: "navigate" as const,
-      title: "Geolocalizzazione attiva"
-    },
-    loading: {
-      body: `Sto recuperando la posizione. Intanto uso ${user.city}.`,
-      icon: "locate-outline" as const,
-      title: "Cerco la tua posizione"
-    },
-    unavailable: {
-      body: `Servizi posizione non disponibili: mostriamo gli eventi della citta indicata, ${user.city}.`,
-      icon: "alert-circle-outline" as const,
-      title: "Posizione non disponibile"
-    }
-  }[locationStatus];
-  const showLocationStatusPanel = locationStatus !== "granted";
 
   useEffect(() => {
     if (!mapReady || filteredEvents.length > 0) {
@@ -234,7 +216,7 @@ export function MapScreen({
           ref={mapRef}
           showsCompass={false}
           showsMyLocationButton={false}
-          showsUserLocation={hasDeviceLocation}
+          showsUserLocation={canCenterOnUser}
           style={styles.map}
           userInterfaceStyle="light"
         >
@@ -286,14 +268,16 @@ export function MapScreen({
           })}
         </MapView>
 
-        <Pressable
-          accessibilityLabel="Centra sulla mia posizione"
-          accessibilityRole="button"
-          onPress={() => void updateUserLocation()}
-          style={styles.locateButton}
-        >
-          <Ionicons color={colors.ink} name="locate-outline" size={21} />
-        </Pressable>
+        {canCenterOnUser ? (
+          <Pressable
+            accessibilityLabel="Centra sulla mia posizione"
+            accessibilityRole="button"
+            onPress={() => void updateUserLocation()}
+            style={styles.locateButton}
+          >
+            <Ionicons color={colors.ink} name="locate-outline" size={21} />
+          </Pressable>
+        ) : null}
 
         <Pressable
           accessibilityLabel="Apri mappa a schermo intero"
@@ -306,7 +290,7 @@ export function MapScreen({
 
       </View>
 
-      {filteredEvents.length === 0 && (
+      {mapIsEmpty && (
         <View style={styles.emptyPanel}>
           <View style={styles.emptyIcon}>
             <Ionicons color={colors.ink} name="map-outline" size={22} />
@@ -324,18 +308,6 @@ export function MapScreen({
         </View>
       )}
 
-      {showLocationStatusPanel ? (
-        <View style={styles.locationPanel}>
-          <View style={styles.locationIcon}>
-            <Ionicons color={colors.ink} name={locationCopy.icon} size={20} />
-          </View>
-          <View style={styles.locationCopy}>
-            <Text style={styles.locationTitle}>{locationCopy.title}</Text>
-            <Text style={styles.locationText}>{locationCopy.body}</Text>
-          </View>
-        </View>
-      ) : null}
-
       </View>
 
       <Modal animationType="fade" onRequestClose={closeFullscreen} visible={fullscreenOpen}>
@@ -345,7 +317,7 @@ export function MapScreen({
             ref={fullscreenMapRef}
             showsCompass={false}
             showsMyLocationButton={false}
-            showsUserLocation={hasDeviceLocation}
+            showsUserLocation={canCenterOnUser}
             style={styles.fullscreenMap}
             userInterfaceStyle="light"
           >
@@ -410,15 +382,17 @@ export function MapScreen({
               </View>
             )}
           </Pressable>
-          <Pressable
-            accessibilityLabel="Centra sulla mia posizione"
-            accessibilityRole="button"
-            hitSlop={8}
-            onPress={() => void updateUserLocation()}
-            style={styles.fullscreenLocateButton}
-          >
-            <Ionicons color={colors.ink} name="locate-outline" size={22} />
-          </Pressable>
+          {canCenterOnUser ? (
+            <Pressable
+              accessibilityLabel="Centra sulla mia posizione"
+              accessibilityRole="button"
+              hitSlop={8}
+              onPress={() => void updateUserLocation()}
+              style={styles.fullscreenLocateButton}
+            >
+              <Ionicons color={colors.ink} name="locate-outline" size={22} />
+            </Pressable>
+          ) : null}
           <Pressable
             accessibilityLabel="Chiudi mappa a schermo intero"
             accessibilityRole="button"
@@ -557,7 +531,7 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.lg,
     padding: spacing.lg,
-    paddingBottom: spacing.lg
+    paddingBottom: spacing.xs
   },
   container: {
     gap: spacing.lg,
@@ -702,7 +676,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     flex: 1,
-    minHeight: 500,
+    minHeight: 0,
     overflow: "hidden",
     position: "relative",
     ...shadow
@@ -872,8 +846,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.md,
-    marginBottom: spacing.xxl,
-    marginTop: -spacing.xxl,
     padding: spacing.md
   },
   emptyIcon: {
@@ -896,39 +868,6 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     lineHeight: 18,
     textAlign: "center"
-  },
-  locationPanel: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.md,
-    padding: spacing.md
-  },
-  locationIcon: {
-    alignItems: "center",
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.md,
-    height: 44,
-    justifyContent: "center",
-    width: 44
-  },
-  locationCopy: {
-    flex: 1,
-    gap: 2
-  },
-  locationTitle: {
-    color: colors.ink,
-    fontSize: 15,
-    fontWeight: "900"
-  },
-  locationText: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: "600",
-    lineHeight: 18
   },
   fullscreenClose: {
     alignItems: "center",

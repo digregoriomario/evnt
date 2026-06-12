@@ -27,7 +27,7 @@ import {
 import { categoryColors, categoryEmojis, categorySoftColors, getEventSubcategoryLabel } from "../data/events";
 import { SearchField } from "../components/SearchField";
 import { PillButton } from "../components/PillButton";
-import { colors, radius, shadow, spacing } from "../theme";
+import { colors, form, radius, shadow, spacing } from "../theme";
 import { EvntEvent, UserProfile } from "../types";
 
 type InboxScreenProps = {
@@ -930,7 +930,7 @@ export function InboxScreen({
               multiline
               onChangeText={setDraft}
               placeholder="Scrivi un messaggio"
-              placeholderTextColor={colors.muted}
+              placeholderTextColor={form.placeholder.color}
               style={styles.messageInput}
               value={draft}
             />
@@ -1131,7 +1131,7 @@ function PeoplePickerModal({
                   keyboardType="email-address"
                   onChangeText={onSearchChange}
                   placeholder="email@dominio.it"
-                  placeholderTextColor={colors.muted}
+                  placeholderTextColor={form.placeholder.color}
                   style={styles.friendSearchInput}
                   textContentType="emailAddress"
                   value={search}
@@ -1515,11 +1515,9 @@ const styles = StyleSheet.create({
     paddingBottom: spacing.sm
   },
   friendSearchInput: {
-    color: colors.ink,
     flex: 1,
-    fontSize: 14,
-    fontWeight: "700",
-    minHeight: 46
+    minHeight: 46,
+    ...form.fieldText
   },
   friendList: {
     gap: spacing.sm,
@@ -1756,14 +1754,12 @@ const styles = StyleSheet.create({
     ...shadow
   },
   messageInput: {
-    color: colors.ink,
     flex: 1,
-    fontSize: 14,
-    fontWeight: "700",
     maxHeight: 110,
     minHeight: 42,
     paddingHorizontal: spacing.sm,
-    paddingVertical: spacing.sm
+    paddingVertical: spacing.sm,
+    ...form.fieldText
   },
   sendButton: {
     alignItems: "center",

@@ -69,7 +69,21 @@ export const form = {
     letterSpacing: 0,
     lineHeight: 17
   },
-  label: typography.label
+  fieldText: {
+    color: colors.ink,
+    fontSize: 16,
+    fontWeight: "700" as const,
+    letterSpacing: 0,
+    lineHeight: 20
+  },
+  label: typography.label,
+  placeholder: {
+    color: colors.muted,
+    fontSize: 16,
+    fontWeight: "700" as const,
+    letterSpacing: 0,
+    lineHeight: 20
+  }
 };
 
 export const hitSlop = {

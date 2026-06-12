@@ -168,6 +168,21 @@ function cityFromFeature(feature: PhotonFeature): CitySuggestion | null {
   };
 }
 
+function cityFromReverseFeature(feature: PhotonFeature): CitySuggestion | null {
+  const props = feature.properties ?? {};
+  const coordinates = coordinatesFromFeature(feature);
+  const name = props.city ?? props.county ?? props.state ?? props.name;
+  if (!coordinates || !name) {
+    return null;
+  }
+
+  return {
+    coordinates,
+    name,
+    province: unique(compact([props.county, props.state, props.country])).join(", ") || props.country || ""
+  };
+}
+
 function placeFromFeature(feature: PhotonFeature, origin?: Coordinates): PlaceSuggestion | null {
   const props = feature.properties ?? {};
   const coordinates = coordinatesFromFeature(feature);
@@ -302,4 +317,13 @@ export async function reverseGeocodeWorldwide(
     .filter((item): item is PlaceSuggestion => item !== null);
 
   return place ?? null;
+}
+
+export async function reverseGeocodeCityWorldwide(coordinates: Coordinates): Promise<CitySuggestion | null> {
+  const features = await reversePhoton(coordinates, 5);
+  const [city] = features
+    .map(cityFromReverseFeature)
+    .filter((item): item is CitySuggestion => item !== null);
+
+  return city ?? null;
 }

@@ -16,10 +16,11 @@ import { DateTimePickerField } from "../components/DateTimePickerField";
 import { FormField } from "../components/FormField";
 import { ProfileImagePicker } from "../components/ProfileImagePicker";
 import { api, ApiError } from "../api";
-import { searchCitiesWorldwide } from "../api/geocoding";
+import { reverseGeocodeCityWorldwide, searchCitiesWorldwide } from "../api/geocoding";
+import { requestCurrentCoordinates } from "../application/location/currentPosition";
 import { citySuggestions, type CitySuggestion } from "../data/cities";
 import { categories } from "../data/events";
-import { colors, radius, shadow, spacing } from "../theme";
+import { colors, form, radius, shadow, spacing } from "../theme";
 import { Category, UserProfile } from "../types";
 
 export type AuthCredentials = { mode: "login" | "signup"; password: string };
@@ -111,6 +112,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
   const [citySuggestionsOpen, setCitySuggestionsOpen] = useState(false);
   const [remoteCitySuggestions, setRemoteCitySuggestions] = useState<CitySuggestion[]>([]);
   const [citySearching, setCitySearching] = useState(false);
+  const [cityLocating, setCityLocating] = useState(false);
   const [avatar, setAvatar] = useState("");
   const [bio, setBio] = useState("");
   const [interests, setInterests] = useState<Category[]>([]);
@@ -223,7 +225,37 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
     setCitySuggestionsOpen(false);
   };
 
-  const resolveItalianCity = async () => {
+  async function useCurrentCity() {
+    if (cityLocating) {
+      return;
+    }
+
+    setCityLocating(true);
+    const coordinates = await requestCurrentCoordinates();
+    if (!coordinates) {
+      setFieldErrors((current) => ({ ...current, city: "Non riesco a recuperare la citta attuale." }));
+      setFormError("Attiva la geolocalizzazione oppure seleziona la citta dai suggerimenti.");
+      setCityLocating(false);
+      return;
+    }
+
+    const currentCity = await reverseGeocodeCityWorldwide(coordinates).catch(() => null);
+    if (!currentCity) {
+      setFieldErrors((current) => ({ ...current, city: "Non riesco a leggere la citta da questa posizione." }));
+      setFormError("Seleziona la citta manualmente dai suggerimenti.");
+      setCityLocating(false);
+      return;
+    }
+
+    setCity(currentCity.name);
+    setSelectedCity(currentCity);
+    setRemoteCitySuggestions([]);
+    setCitySuggestionsOpen(false);
+    clearFieldError("city");
+    setCityLocating(false);
+  }
+
+  const resolveCity = async () => {
     const normalized = city.trim();
     const selectedMatch =
       selectedCity && selectedCity.name.trim().toLowerCase() === normalized.toLowerCase()
@@ -364,9 +396,9 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
       }
       return;
     }
-    const exactCity = await resolveItalianCity();
+    const exactCity = await resolveCity();
     if (!exactCity) {
-      showValidationErrors({ city: "Seleziona una citta italiana dai suggerimenti." });
+      showValidationErrors({ city: "Seleziona una citta dai suggerimenti." });
       setStep(1);
       return;
     }
@@ -420,10 +452,10 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
 
     if (step === 1) {
       setSubmitting(true);
-      const exactCity = await resolveItalianCity();
+      const exactCity = await resolveCity();
       setSubmitting(false);
       if (!exactCity) {
-        showValidationErrors({ city: "Seleziona una citta italiana dai suggerimenti." });
+        showValidationErrors({ city: "Seleziona una citta dai suggerimenti." });
         return;
       }
       setCity(exactCity.name);
@@ -546,7 +578,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
                           clearFieldError("email");
                         }}
                         placeholder="nome@email.it"
-                        placeholderTextColor={colors.muted}
+                        placeholderTextColor={form.placeholder.color}
                         style={styles.emailInput}
                         textContentType="emailAddress"
                         value={email}
@@ -590,7 +622,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
                         clearFieldError("name");
                       }}
                       placeholder="Il tuo nome"
-                      placeholderTextColor={colors.muted}
+                      placeholderTextColor={form.placeholder.color}
                       style={styles.input}
                       value={name}
                     />
@@ -617,11 +649,20 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
                           onChangeText={handleCityChange}
                           onFocus={() => setCitySuggestionsOpen(true)}
                           placeholder="Es. Roma"
-                          placeholderTextColor={colors.muted}
+                          placeholderTextColor={form.placeholder.color}
                           style={styles.cityInput}
                           value={city}
                         />
-                        <Ionicons color={colors.muted} name="search-outline" size={19} />
+                        <Pressable
+                          accessibilityLabel="Usa la citta attuale"
+                          accessibilityRole="button"
+                          disabled={cityLocating}
+                          hitSlop={8}
+                          onPress={() => void useCurrentCity()}
+                          style={[styles.locateFieldButton, cityLocating && styles.locateFieldButtonDisabled]}
+                        >
+                          <Ionicons color={selectedCity ? colors.ink : colors.muted} name="locate-outline" size={19} />
+                        </Pressable>
                       </View>
 
                       {citySuggestionsOpen && filteredCitySuggestions.length > 0 && (
@@ -652,7 +693,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
                               <Ionicons color={colors.ink} name="globe-outline" size={17} />
                             </View>
                             <View style={styles.suggestionCopy}>
-                              <Text style={styles.suggestionTitle}>Cerco citta italiane...</Text>
+                              <Text style={styles.suggestionTitle}>Cerco citta...</Text>
                               <Text style={styles.suggestionMeta}>OpenStreetMap</Text>
                             </View>
                           </View>
@@ -682,7 +723,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
                         clearFieldError("bio");
                       }}
                       placeholder="Racconta in poche parole cosa ti piace fare."
-                      placeholderTextColor={colors.muted}
+                      placeholderTextColor={form.placeholder.color}
                       style={[styles.input, styles.textArea]}
                       value={bio}
                     />
@@ -751,7 +792,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
                       clearFieldError("email");
                     }}
                     placeholder="nome@email.it"
-                    placeholderTextColor={colors.muted}
+                    placeholderTextColor={form.placeholder.color}
                     style={styles.emailInput}
                     textContentType="emailAddress"
                     value={email}
@@ -825,7 +866,7 @@ function PasswordInput({
         autoCorrect={false}
         onChangeText={onChangeText}
         placeholder={placeholder}
-        placeholderTextColor={colors.muted}
+        placeholderTextColor={form.placeholder.color}
         secureTextEntry={!visible}
         style={styles.passwordInput}
         textContentType="password"
@@ -988,16 +1029,14 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
-    color: colors.ink,
-    fontSize: 16,
     minHeight: 56,
-    paddingHorizontal: spacing.md
+    paddingHorizontal: spacing.md,
+    ...form.fieldText
   },
   passwordInput: {
-    color: colors.ink,
     flex: 1,
-    fontSize: 16,
-    minHeight: 54
+    minHeight: 54,
+    ...form.fieldText
   },
   passwordInputWrap: {
     alignItems: "center",
@@ -1030,10 +1069,9 @@ const styles = StyleSheet.create({
     paddingRight: spacing.md
   },
   emailInput: {
-    color: colors.ink,
     flex: 1,
-    fontSize: 16,
-    minHeight: 54
+    minHeight: 54,
+    ...form.fieldText
   },
   textArea: {
     minHeight: 104,
@@ -1044,10 +1082,9 @@ const styles = StyleSheet.create({
     gap: spacing.sm
   },
   cityInput: {
-    color: colors.ink,
     flex: 1,
-    fontSize: 16,
-    minHeight: 54
+    minHeight: 54,
+    ...form.fieldText
   },
   cityInputWrap: {
     alignItems: "center",
@@ -1059,6 +1096,17 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
     minHeight: 56,
     paddingHorizontal: spacing.md
+  },
+  locateFieldButton: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 18,
+    height: 36,
+    justifyContent: "center",
+    width: 36
+  },
+  locateFieldButtonDisabled: {
+    opacity: 0.55
   },
   chips: {
     flexDirection: "row",

@@ -205,6 +205,8 @@ export function MapScreen({
 
   const selectedEvent =
     filteredEvents.find((event) => event.id === selectedEventId) ?? filteredEvents[0];
+  const mapIsEmpty = filteredEvents.length === 0;
+  const canCenterOnUser = locationStatus === "granted" && userCoordinates !== null && hasDeviceLocation;
 
   useEffect(() => {
     if (selectedEventId && filteredEvents.some((event) => event.id === selectedEventId)) {
@@ -222,29 +224,9 @@ export function MapScreen({
     await onRequestLocation();
   }, [onRequestLocation]);
 
-  const locationCopy = {
-    denied: {
-      body: `Permesso posizione mancante: mostriamo gli eventi della citta indicata, ${user.city}.`,
-      icon: "location-outline" as const,
-      title: "Posizione non autorizzata"
-    },
-    granted: {
-      body: "Posizione attiva.",
-      icon: "navigate" as const,
-      title: "Geolocalizzazione attiva"
-    },
-    loading: {
-      body: `Sto recuperando la posizione. Intanto uso ${user.city}.`,
-      icon: "locate-outline" as const,
-      title: "Cerco la tua posizione"
-    },
-    unavailable: {
-      body: `Servizi posizione non disponibili: mostriamo gli eventi della citta indicata, ${user.city}.`,
-      icon: "alert-circle-outline" as const,
-      title: "Posizione non disponibile"
-    }
-  }[locationStatus];
-  const showLocationStatusPanel = locationStatus !== "granted";
+  useEffect(() => {
+    void onRequestLocation();
+  }, [onRequestLocation]);
 
   const closeFullscreen = () => {
     setFullscreenOpen(false);
@@ -287,7 +269,7 @@ export function MapScreen({
           eventDistances={eventDistances}
           events={filteredEvents}
           favorites={favorites}
-          hasDeviceLocation={hasDeviceLocation}
+          hasDeviceLocation={canCenterOnUser}
           onExpand={() => setFullscreenOpen(true)}
           onFilter={() => setFiltersOpen(true)}
           onLocate={() => void updateUserLocation()}
@@ -300,7 +282,7 @@ export function MapScreen({
           selectedEvent={selectedEvent}
         />
 
-        {filteredEvents.length === 0 && (
+        {mapIsEmpty && (
           <View style={styles.emptyPanel}>
             <View style={styles.emptyIcon}>
               <Ionicons color={colors.ink} name="map-outline" size={22} />
@@ -318,17 +300,6 @@ export function MapScreen({
           </View>
         )}
 
-        {showLocationStatusPanel ? (
-          <View style={styles.locationPanel}>
-            <View style={styles.locationIcon}>
-              <Ionicons color={colors.ink} name={locationCopy.icon} size={20} />
-            </View>
-            <View style={styles.locationCopy}>
-              <Text style={styles.locationTitle}>{locationCopy.title}</Text>
-              <Text style={styles.locationText}>{locationCopy.body}</Text>
-            </View>
-          </View>
-        ) : null}
       </View>
 
       <Modal animationType="fade" onRequestClose={closeFullscreen} visible={fullscreenOpen}>
@@ -339,7 +310,7 @@ export function MapScreen({
             events={filteredEvents}
             favorites={favorites}
             fullscreen
-            hasDeviceLocation={hasDeviceLocation}
+            hasDeviceLocation={canCenterOnUser}
             onClose={closeFullscreen}
             onFilter={() => setFiltersOpen(true)}
             onLocate={() => void updateUserLocation()}
@@ -612,14 +583,16 @@ function WebLeafletMap({
             </View>
           )}
         </Pressable>
-        <Pressable
-          accessibilityLabel="Centra sulla mia posizione"
-          accessibilityRole="button"
-          onPress={onLocate}
-          style={styles.mapControlButton}
-        >
-          <Ionicons color={colors.ink} name="locate-outline" size={21} />
-        </Pressable>
+        {hasDeviceLocation ? (
+          <Pressable
+            accessibilityLabel="Centra sulla mia posizione"
+            accessibilityRole="button"
+            onPress={onLocate}
+            style={styles.mapControlButton}
+          >
+            <Ionicons color={colors.ink} name="locate-outline" size={21} />
+          </Pressable>
+        ) : null}
         {fullscreen ? (
           <Pressable
             accessibilityLabel="Chiudi mappa a schermo intero"
@@ -735,7 +708,7 @@ const styles = StyleSheet.create({
     flex: 1,
     gap: spacing.lg,
     padding: spacing.lg,
-    paddingBottom: spacing.lg
+    paddingBottom: spacing.xs
   },
   headerCopy: {
     flex: 1,
@@ -790,7 +763,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     flex: 1,
-    minHeight: 520,
+    minHeight: 0,
     overflow: "hidden",
     position: "relative",
     ...shadow
@@ -992,8 +965,6 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.md,
-    marginBottom: spacing.xxl,
-    marginTop: -spacing.xxl,
     padding: spacing.md
   },
   emptyIcon: {
@@ -1020,38 +991,5 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     lineHeight: 18,
     textAlign: "center"
-  },
-  locationPanel: {
-    alignItems: "center",
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    flexDirection: "row",
-    gap: spacing.md,
-    padding: spacing.md
-  },
-  locationIcon: {
-    alignItems: "center",
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: radius.md,
-    height: 44,
-    justifyContent: "center",
-    width: 44
-  },
-  locationCopy: {
-    flex: 1,
-    gap: 2
-  },
-  locationTitle: {
-    color: colors.ink,
-    fontSize: 15,
-    fontWeight: "900"
-  },
-  locationText: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: "600",
-    lineHeight: 18
   }
 });

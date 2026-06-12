@@ -12,7 +12,8 @@ import {
   View
 } from "react-native";
 
-import { distanceBetweenKm, reverseGeocodeItalianPlace, searchItalianPlaces } from "../api/geocoding";
+import { distanceBetweenKm, reverseGeocodeWorldwide, searchPlacesWorldwide } from "../api/geocoding";
+import { canRequestCurrentCoordinates, requestCurrentCoordinates } from "../application/location/currentPosition";
 import { DateTimePickerField } from "../components/DateTimePickerField";
 import { EventCard } from "../components/EventCard";
 import { FormField } from "../components/FormField";
@@ -27,7 +28,7 @@ import {
   getEventSubcategoryLabel
 } from "../data/events";
 import { placeSuggestions, type PlaceSuggestion } from "../data/places";
-import { colors, radius, shadow, spacing } from "../theme";
+import { colors, form, radius, shadow, spacing } from "../theme";
 import { Category, ChatMode, Coordinates, EvntEvent, UserProfile } from "../types";
 
 type CreateEventScreenProps = {
@@ -90,8 +91,8 @@ const eventTypes: EventTypeOption[] = [
   { emoji: "🎬", label: "Cinema", category: "Cinema" }
 ];
 
-const createPrimary = "#5A4BC4";
-const createPrimarySoft = "#F0EEFF";
+const createPrimary = colors.primary;
+const createPrimarySoft = colors.surfaceMuted;
 const customSubcategoryOption = "Altro";
 const dayNames = ["Dom", "Lun", "Mar", "Mer", "Gio", "Ven", "Sab"];
 const monthNames = ["gen", "feb", "mar", "apr", "mag", "giu", "lug", "ago", "set", "ott", "nov", "dic"];
@@ -222,6 +223,8 @@ export function CreateEventScreen({
   const [remotePlaceSuggestions, setRemotePlaceSuggestions] = useState<PlaceSuggestion[]>([]);
   const [placeSearching, setPlaceSearching] = useState(false);
   const [reverseGeocoding, setReverseGeocoding] = useState(false);
+  const [locatingPlace, setLocatingPlace] = useState(false);
+  const [canLocatePlace, setCanLocatePlace] = useState(false);
   const [date, setDate] = useState(() => initialDraft?.date ?? dateTimeFromEvent(initialEvent).date);
   const [time, setTime] = useState(() => initialDraft?.time ?? dateTimeFromEvent(initialEvent).time);
   const [capacity, setCapacity] = useState(
@@ -236,6 +239,7 @@ export function CreateEventScreen({
   const [fieldErrors, setFieldErrors] = useState<CreateFieldErrors>({});
   const [publishing, setPublishing] = useState(false);
   const reverseLookupId = useRef(0);
+  const locationPrefilledRef = useRef(Boolean(initialEvent ?? initialDraft?.address ?? initialDraft?.place));
 
   const parsedPrice = useMemo(() => Number.parseFloat(price.replace(",", ".")), [price]);
   const parsedCapacity = useMemo(() => Number.parseInt(capacity, 10), [capacity]);
@@ -355,6 +359,9 @@ export function CreateEventScreen({
     setRemotePlaceSuggestions([]);
     setPlaceSearching(false);
     setReverseGeocoding(false);
+    setLocatingPlace(false);
+    setCanLocatePlace(false);
+    locationPrefilledRef.current = Boolean(initialEvent ?? draftSource?.address ?? draftSource?.place);
     setDate(draftSource?.date ?? nextDateTime.date);
     setTime(draftSource?.time ?? nextDateTime.time);
     setCapacity(initialEvent?.capacity ? String(initialEvent.capacity) : draftSource?.capacity ?? "");
@@ -430,7 +437,7 @@ export function CreateEventScreen({
     let cancelled = false;
     setPlaceSearching(true);
     const timeout = setTimeout(() => {
-      searchItalianPlaces(normalized, originCoordinates)
+      searchPlacesWorldwide(normalized, originCoordinates)
         .then((suggestions) => {
           if (!cancelled) {
             setRemotePlaceSuggestions(suggestions);
@@ -453,6 +460,38 @@ export function CreateEventScreen({
       clearTimeout(timeout);
     };
   }, [addressInputValue, originCoordinates, placeSuggestionsOpen]);
+
+  useEffect(() => {
+    let cancelled = false;
+    canRequestCurrentCoordinates()
+      .then((available) => {
+        if (!cancelled) {
+          setCanLocatePlace(available);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setCanLocatePlace(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [initialEvent?.id]);
+
+  useEffect(() => {
+    if (editing || locationPrefilledRef.current) {
+      return;
+    }
+    if (addressInputValue.trim() || manualCoordinates || selectedPlace) {
+      locationPrefilledRef.current = true;
+      return;
+    }
+
+    locationPrefilledRef.current = true;
+    void useCurrentEventLocation({ silent: true });
+  }, [addressInputValue, editing, manualCoordinates, originCoordinates, selectedPlace]);
 
   const filteredPlaceSuggestions = useMemo(() => {
     const normalized = addressInputValue.trim().toLowerCase();
@@ -615,7 +654,7 @@ export function CreateEventScreen({
       selectedPlace?.address === pendingMapAddressLabel ? null : selectedPlace;
 
     if (!resolvedPlace && manualCoordinates) {
-      resolvedPlace = await reverseGeocodeItalianPlace(manualCoordinates, originCoordinates).catch(() => null);
+      resolvedPlace = await reverseGeocodeWorldwide(manualCoordinates, originCoordinates).catch(() => null);
       if (resolvedPlace) {
         setSelectedPlace(resolvedPlace);
         setManualCoordinates(resolvedPlace.coordinates);
@@ -629,7 +668,7 @@ export function CreateEventScreen({
       const [fallbackPlace] =
         filteredPlaceSuggestions.length > 0
           ? filteredPlaceSuggestions
-          : await searchItalianPlaces(normalizedAddress, originCoordinates).catch(() => []);
+          : await searchPlacesWorldwide(normalizedAddress, originCoordinates).catch(() => []);
       resolvedPlace = fallbackPlace ?? null;
 
       if (resolvedPlace) {
@@ -642,7 +681,7 @@ export function CreateEventScreen({
 
     const coordinates = resolvedPlace?.coordinates ?? (canReuseInitialPlace ? initialEvent?.coordinates : undefined);
     if (!coordinates) {
-      showCreateErrors({ place: "Seleziona un indirizzo italiano dai suggerimenti o sposta il POI su un indirizzo in Italia." });
+      showCreateErrors({ place: "Seleziona un indirizzo dai suggerimenti o sposta il POI sulla mappa." });
       setStep(1);
       setPublishing(false);
       return;
@@ -756,10 +795,18 @@ export function CreateEventScreen({
     setPlaceSuggestionsOpen(false);
   };
 
-  const chooseMapCoordinates = (coordinates: Coordinates) => {
+  const fallbackPlaceFromCoordinates = (coordinates: Coordinates, name: string): PlaceSuggestion => ({
+    address: user.city ? `Centro di ${user.city}` : "Coordinate selezionate",
+    city: user.city,
+    countryCode: "IT",
+    coordinates,
+    distanceKm: originCoordinates ? distanceBetweenKm(originCoordinates, coordinates) : 0,
+    name
+  });
+
+  const chooseMapCoordinates = (coordinates: Coordinates, fallbackName = "Luogo selezionato sulla mappa") => {
     const lookupId = reverseLookupId.current + 1;
     reverseLookupId.current = lookupId;
-    const fallbackName = "Luogo selezionato sulla mappa";
     const manualPlace: PlaceSuggestion = {
       address: pendingMapAddressLabel,
       city: user.city,
@@ -776,28 +823,26 @@ export function CreateEventScreen({
     clearFieldError("place");
     setReverseGeocoding(true);
 
-    void reverseGeocodeItalianPlace(coordinates, originCoordinates)
+    void reverseGeocodeWorldwide(coordinates, originCoordinates)
       .then((resolvedPlace) => {
         if (reverseLookupId.current !== lookupId) {
           return;
         }
 
-        if (!resolvedPlace) {
-          setSelectedPlace(null);
-          setFormError("Sposta il POI su un indirizzo in Italia o scegli un suggerimento.");
-          return;
-        }
-
-        setManualCoordinates(resolvedPlace.coordinates);
-        setSelectedPlace(resolvedPlace);
-        setPlace(resolvedPlace.name);
-        setAddress(resolvedPlace.address);
+        const nextPlace = resolvedPlace ?? fallbackPlaceFromCoordinates(coordinates, fallbackName);
+        setManualCoordinates(nextPlace.coordinates);
+        setSelectedPlace(nextPlace);
+        setPlace(nextPlace.name);
+        setAddress(nextPlace.address);
         setFormError("");
       })
       .catch(() => {
         if (reverseLookupId.current === lookupId) {
-          setSelectedPlace(null);
-          setFormError("Non riesco a leggere l'indirizzo del POI. Riprova o scegli un suggerimento.");
+          const fallbackPlace = fallbackPlaceFromCoordinates(coordinates, fallbackName);
+          setSelectedPlace(fallbackPlace);
+          setPlace(fallbackPlace.name);
+          setAddress(fallbackPlace.address);
+          setFormError("");
         }
       })
       .finally(() => {
@@ -806,6 +851,28 @@ export function CreateEventScreen({
         }
       });
   };
+
+  async function useCurrentEventLocation(options: { silent?: boolean } = {}) {
+    if (locatingPlace) {
+      return;
+    }
+
+    setLocatingPlace(true);
+    const currentCoordinates = await requestCurrentCoordinates();
+    setCanLocatePlace(Boolean(currentCoordinates));
+    const coordinates = currentCoordinates ?? originCoordinates;
+
+    if (!coordinates) {
+      if (!options.silent) {
+        setFormError("Non riesco a recuperare la posizione attuale. Inserisci l'indirizzo manualmente.");
+      }
+      setLocatingPlace(false);
+      return;
+    }
+
+    chooseMapCoordinates(coordinates, currentCoordinates ? "Posizione attuale" : user.city || "Centro città");
+    setLocatingPlace(false);
+  }
 
   const chooseSubcategory = (value: string) => {
     setSelectedSubcategory(value);
@@ -852,6 +919,10 @@ export function CreateEventScreen({
 
         {step === 0 && (
           <View style={styles.panel}>
+            <View style={styles.stepHeader}>
+              <Text style={styles.stepTitle}>Racconta l'evento</Text>
+              <Text style={styles.stepSubtitle}>Scegli categoria, sottocategoria e aggiungi le informazioni principali.</Text>
+            </View>
             <FormField label="Tipo di evento">
               <View style={styles.typeGrid}>
                 {eventTypes.map((item) => {
@@ -903,7 +974,7 @@ export function CreateEventScreen({
                     clearFieldError("subcategory");
                   }}
                   placeholder="Es. Beach volley, Poetry slam..."
-                  placeholderTextColor={colors.muted}
+                  placeholderTextColor={form.placeholder.color}
                   style={styles.input}
                   value={customSubcategory}
                 />
@@ -917,7 +988,7 @@ export function CreateEventScreen({
                   clearFieldError("title");
                 }}
                 placeholder={`Es. ${effectiveSubcategory || "Evento"} - cercasi 3`}
-                placeholderTextColor={colors.muted}
+                placeholderTextColor={form.placeholder.color}
                 style={styles.input}
                 value={title}
               />
@@ -931,7 +1002,7 @@ export function CreateEventScreen({
                   clearFieldError("description");
                 }}
                 placeholder="Di cosa si tratta..."
-                placeholderTextColor={colors.muted}
+                placeholderTextColor={form.placeholder.color}
                 style={[styles.input, styles.textArea]}
                 value={description}
               />
@@ -941,6 +1012,10 @@ export function CreateEventScreen({
 
         {step === 1 && (
           <View style={styles.panel}>
+            <View style={styles.stepHeader}>
+              <Text style={styles.stepTitle}>Dove e quando</Text>
+              <Text style={styles.stepSubtitle}>Imposta indirizzo, data, partecipanti e regole della chat.</Text>
+            </View>
             <Field error={fieldErrors.place} label="Indirizzo *">
               <View style={styles.autocompleteWrap}>
                 <View style={styles.placeInputWrap}>
@@ -950,11 +1025,22 @@ export function CreateEventScreen({
                     onChangeText={handlePlaceChange}
                     onFocus={() => setPlaceSuggestionsOpen(addressInputValue.trim().length > 1)}
                     placeholder="Es. Via Roma 10, Milano"
-                    placeholderTextColor={colors.muted}
+                    placeholderTextColor={form.placeholder.color}
                     style={styles.placeInput}
                     value={addressInputValue}
                   />
-                  <Ionicons color={selectedPlace ? colors.green : colors.muted} name="search-outline" size={20} />
+                  {canLocatePlace ? (
+                    <Pressable
+                      accessibilityLabel="Usa la posizione attuale come indirizzo"
+                      accessibilityRole="button"
+                      disabled={locatingPlace || reverseGeocoding}
+                      hitSlop={8}
+                      onPress={() => void useCurrentEventLocation()}
+                      style={[styles.locateFieldButton, (locatingPlace || reverseGeocoding) && styles.locateFieldButtonDisabled]}
+                    >
+                      <Ionicons color={selectedPlace ? colors.ink : colors.muted} name="locate-outline" size={20} />
+                    </Pressable>
+                  ) : null}
                 </View>
 
                 {placeSuggestionsOpen && filteredPlaceSuggestions.length > 0 && (
@@ -989,7 +1075,7 @@ export function CreateEventScreen({
                         <Ionicons color={colors.ink} name="globe-outline" size={18} />
                       </View>
                       <View style={styles.suggestionCopy}>
-                        <Text style={styles.suggestionTitle}>Cerco indirizzi in Italia...</Text>
+                        <Text style={styles.suggestionTitle}>Cerco indirizzi...</Text>
                         <Text style={styles.suggestionMeta}>OpenStreetMap</Text>
                       </View>
                     </View>
@@ -1050,7 +1136,7 @@ export function CreateEventScreen({
                     clearFieldError("capacity");
                   }}
                   placeholder="Illimitati"
-                  placeholderTextColor={colors.muted}
+                  placeholderTextColor={form.placeholder.color}
                   style={styles.input}
                   value={capacity}
                 />
@@ -1077,7 +1163,7 @@ export function CreateEventScreen({
                     clearFieldError("price");
                   }}
                   placeholder="0 = gratis"
-                  placeholderTextColor={colors.muted}
+                  placeholderTextColor={form.placeholder.color}
                   style={styles.input}
                   value={price}
                 />
@@ -1105,6 +1191,10 @@ export function CreateEventScreen({
 
         {step === 2 && (
           <View style={styles.reviewStack}>
+            <View style={styles.stepHeader}>
+              <Text style={styles.stepTitle}>Anteprima evento</Text>
+              <Text style={styles.stepSubtitle}>Controlla come apparira prima della pubblicazione.</Text>
+            </View>
             <View pointerEvents="none" style={styles.previewWrapper}>
               <EventCard
                 event={previewEvent}
@@ -1129,6 +1219,9 @@ export function CreateEventScreen({
           <Text style={styles.primaryText}>
             {publishing ? "Verifico luogo..." : step === 2 ? (editing ? "Salva modifiche" : "Pubblica evento") : "Avanti"}
           </Text>
+          {!publishing ? (
+            <Ionicons color={colors.surface} name={step === 2 ? "checkmark" : "arrow-forward"} size={18} />
+          ) : null}
         </Pressable>
       </View>
 
@@ -1281,18 +1374,20 @@ const styles = StyleSheet.create({
     paddingBottom: 112
   },
   progressRow: {
+    alignItems: "center",
     flexDirection: "row",
-    gap: spacing.sm
+    gap: spacing.sm,
+    justifyContent: "center"
   },
   progressDot: {
     backgroundColor: colors.line,
-    borderRadius: 5,
-    height: 10,
-    width: 10
+    borderRadius: 4,
+    height: 7,
+    width: 30
   },
   progressDotActive: {
     backgroundColor: createPrimary,
-    width: 36
+    width: 38
   },
   formErrorText: {
     backgroundColor: colors.roseSoft,
@@ -1322,10 +1417,9 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
-    color: colors.ink,
-    fontSize: 16,
     minHeight: 56,
     paddingHorizontal: spacing.md,
+    ...form.fieldText,
     ...shadow
   },
   inputError: {
@@ -1451,10 +1545,20 @@ const styles = StyleSheet.create({
     ...shadow
   },
   placeInput: {
-    color: colors.ink,
     flex: 1,
-    fontSize: 16,
-    minHeight: 54
+    minHeight: 54,
+    ...form.fieldText
+  },
+  locateFieldButton: {
+    alignItems: "center",
+    backgroundColor: colors.surfaceMuted,
+    borderRadius: 18,
+    height: 36,
+    justifyContent: "center",
+    width: 36
+  },
+  locateFieldButtonDisabled: {
+    opacity: 0.55
   },
   suggestionList: {
     backgroundColor: colors.surface,
@@ -1476,7 +1580,7 @@ const styles = StyleSheet.create({
   },
   suggestionIcon: {
     alignItems: "center",
-    backgroundColor: "#EEF5FF",
+    backgroundColor: colors.surfaceMuted,
     borderRadius: 20,
     height: 40,
     justifyContent: "center",
@@ -1556,6 +1660,21 @@ const styles = StyleSheet.create({
   reviewStack: {
     gap: spacing.md
   },
+  stepHeader: {
+    gap: spacing.xs
+  },
+  stepTitle: {
+    color: colors.ink,
+    fontSize: 22,
+    fontWeight: "900",
+    lineHeight: 27
+  },
+  stepSubtitle: {
+    color: colors.muted,
+    fontSize: 14,
+    fontWeight: "700",
+    lineHeight: 20
+  },
   previewWrapper: {
     alignSelf: "stretch"
   },
@@ -1574,6 +1693,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: createPrimary,
     borderRadius: radius.md,
+    flexDirection: "row",
+    gap: spacing.sm,
     justifyContent: "center",
     minHeight: 50,
     minWidth: 142,
@@ -1581,7 +1702,7 @@ const styles = StyleSheet.create({
     ...shadow
   },
   disabledPrimary: {
-    backgroundColor: "#B9B2A7"
+    backgroundColor: colors.muted
   },
   primaryText: {
     color: colors.surface,
