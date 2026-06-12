@@ -10,8 +10,17 @@ Evnt/
 
 ## Documentazione
 
-La documentazione tecnica completa del progetto è disponibile su Google Drive:
-[Documentazione Evnt](https://drive.google.com/drive/folders/1rA5eZXwl1qi7YixnvFl7J1aURynljoFk?usp=drive_link)
+La documentazione tecnica completa del progetto Evnt è disponibile su Google Drive:
+
+- [Documentazione tecnica Evnt](https://drive.google.com/drive/folders/1rA5eZXwl1qi7YixnvFl7J1aURynljoFk?usp=drive_link)
+
+La cartella contiene la documentazione generale dell’applicazione, inclusa la descrizione dell’architettura, del frontend, del backend, delle API, degli script, dei moduli principali e dei componenti utilizzati.
+
+Sono inoltre disponibili README specifici per le singole parti del progetto:
+
+- Backend: [`evnt-backend/README.md`](./evnt-backend/README.md)
+- Frontend: [`evnt-frontend/README.md`](./evnt-frontend/README.md)
+
 
 ## Prerequisiti
 
@@ -238,12 +247,6 @@ cd evnt-backend
 docker compose down -v
 docker compose up -d --build
 ```
-
-## Documentazione dettagliata
-
-- Backend: [`evnt-backend/README.md`](./evnt-backend/README.md)
-- Frontend: [`evnt-frontend/README.md`](./evnt-frontend/README.md)
-- Documentazione strategica: [Google Drive](https://drive.google.com/drive/folders/1rA5eZXwl1qi7YixnvFl7J1aURynljoFk?usp=drive_link)
 
 ## Team
 
