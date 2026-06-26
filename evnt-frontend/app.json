@@ -32,7 +32,6 @@
       "permissions": [
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
-        "POST_NOTIFICATIONS",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION"
       ]
@@ -44,7 +43,6 @@
           "locationWhenInUsePermission": "Evnt usa la tua posizione per mostrarti gli eventi vicini sulla mappa."
         }
       ],
-      "expo-notifications",
       "expo-secure-store",
       "@react-native-community/datetimepicker"
     ],

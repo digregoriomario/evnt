@@ -8,18 +8,6 @@ const hourMs = 60 * 60 * 1000;
 const dayMs = 24 * hourMs;
 const readNotificationRetentionMs = dayMs;
 const hardNotificationRetentionMs = 7 * dayMs;
-const expoPushEndpoint = "https://exp.host/--/api/v2/push/send";
-const pushEnabledTypes = new Set<NotificationType>([
-  "NEW_MATCH",
-  "SAVED_EVENT_REMINDER",
-  "EVENT_STARTING",
-  "EVENT_UPDATED",
-  "EVENT_CANCELLED",
-  "LOW_SEATS",
-  "EVENT_FULL",
-  "CHAT_MESSAGE",
-  "ORGANIZER_ANNOUNCEMENT"
-]);
 const eventBackedNotificationTypes = new Set<NotificationType>([
   "NEW_MATCH",
   "SAVED_EVENT_REMINDER",
@@ -35,13 +23,10 @@ type NotificationInput = {
   dedupeKey?: string;
   eventId?: number;
   message: string;
-  pushMode?: PushDeliveryMode;
   title: string;
   type: NotificationType;
   userId: number;
 };
-
-type PushDeliveryMode = "await" | "background";
 
 type EventSnapshot = {
   address?: string | null;
@@ -52,27 +37,6 @@ type EventSnapshot = {
   maxSeats: number | null;
   place: string;
   title: string;
-};
-
-type CreatedNotification = {
-  eventId: number | null;
-  id: number;
-  message: string;
-  title: string;
-  type: NotificationType;
-  userId: number;
-};
-
-type ExpoPushTicket = {
-  details?: { error?: string };
-  id?: string;
-  message?: string;
-  status: "ok" | "error";
-};
-
-type ExpoPushResponse = {
-  data?: ExpoPushTicket | ExpoPushTicket[];
-  errors?: unknown[];
 };
 
 function normalizeText(value?: string | null) {
@@ -101,8 +65,7 @@ async function createNotification(input: NotificationInput) {
   };
 
   if (!input.dedupeKey) {
-    const notification = await prisma.notification.create({ data });
-    await dispatchPushForNotification(notification, input.pushMode);
+    await prisma.notification.create({ data });
     return;
   }
 
@@ -114,8 +77,7 @@ async function createNotification(input: NotificationInput) {
     return;
   }
 
-  const notification = await prisma.notification.create({ data: { ...data, dedupeKey: input.dedupeKey } });
-  await dispatchPushForNotification(notification, input.pushMode);
+  await prisma.notification.create({ data: { ...data, dedupeKey: input.dedupeKey } });
 }
 
 async function createNotifications(inputs: NotificationInput[]) {
@@ -134,79 +96,6 @@ export async function cleanupOldNotifications(now = eventCleanupNow()) {
       ]
     }
   });
-}
-
-async function sendPushForNotification(notification: CreatedNotification) {
-  if (!pushEnabledTypes.has(notification.type)) {
-    return;
-  }
-
-  try {
-    const pushTokens = await prisma.pushToken.findMany({
-      where: { disabled: false, userId: notification.userId },
-      select: { token: true }
-    });
-    if (pushTokens.length === 0) {
-      return;
-    }
-
-    const messages = pushTokens.map(({ token }) => ({
-      to: token,
-      sound: "default",
-      title: notification.title,
-      body: notification.message,
-      channelId: "events",
-      data: {
-        eventId: notification.eventId ? String(notification.eventId) : undefined,
-        notificationId: String(notification.id),
-        type: notification.type
-      }
-    }));
-
-    const response = await fetch(expoPushEndpoint, {
-      method: "POST",
-      headers: {
-        Accept: "application/json",
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify(messages)
-    });
-
-    if (!response.ok) {
-      throw new Error(`Expo push request failed with ${response.status}`);
-    }
-
-    const payload = (await response.json()) as ExpoPushResponse;
-    const tickets = Array.isArray(payload.data) ? payload.data : payload.data ? [payload.data] : [];
-    const invalidTokens = tickets
-      .map((ticket, index) =>
-        ticket.status === "error" && ticket.details?.error === "DeviceNotRegistered"
-          ? pushTokens[index]?.token
-          : null
-      )
-      .filter((token): token is string => Boolean(token));
-
-    if (invalidTokens.length > 0) {
-      await prisma.pushToken.updateMany({
-        where: { token: { in: invalidTokens } },
-        data: { disabled: true }
-      });
-    }
-  } catch (error) {
-    console.error("Failed to send push notification", error);
-  }
-}
-
-async function dispatchPushForNotification(
-  notification: CreatedNotification,
-  mode: PushDeliveryMode = "background"
-) {
-  if (mode === "await") {
-    await sendPushForNotification(notification);
-    return;
-  }
-
-  void sendPushForNotification(notification);
 }
 
 export async function notifyNewMatchingEvent(eventId: number) {
@@ -284,7 +173,6 @@ export async function notifyEventCancelled(event: EventSnapshot) {
       dedupeKey: `event-cancelled:${userId}:${event.id}`,
       eventId: event.id,
       message: `${event.title} e stato annullato dall'organizzatore.`,
-      pushMode: "await",
       title: "Evento annullato",
       type: "EVENT_CANCELLED",
       userId
@@ -379,16 +267,6 @@ export async function notifyDirectMessage(recipientId: number, senderName: strin
     title: "Nuovo messaggio",
     type: "CHAT_MESSAGE",
     userId: recipientId
-  });
-}
-
-export async function notifyTestPush(userId: number) {
-  await createNotification({
-    message: "Se leggi questa notifica, le push di Evnt sono configurate correttamente.",
-    pushMode: "await",
-    title: "Test push Evnt",
-    type: "CHAT_MESSAGE",
-    userId
   });
 }
 

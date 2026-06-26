@@ -122,12 +122,6 @@ export type Notification = {
   createdAt: string;
 };
 
-export type PushTokenPayload = {
-  deviceId?: string;
-  platform: string;
-  token: string;
-};
-
 function toQuery(filters?: EventFilters): string {
   if (!filters) return "";
   const params = new URLSearchParams();
@@ -291,11 +285,5 @@ export const api = {
   deleteNotification: (id: number) => apiRequest<void>(`/notifications/${id}`, { method: "DELETE" }),
   deleteAllNotifications: () => apiRequest<void>("/notifications", { method: "DELETE" }),
   markRead: (id: number) => apiRequest<void>(`/notifications/${id}/read`, { method: "POST" }),
-  markAllRead: () => apiRequest<void>("/notifications/read-all", { method: "POST" }),
-  registerPushToken: (payload: PushTokenPayload) =>
-    apiRequest<void>("/notifications/push-token", { method: "POST", body: payload }),
-  unregisterPushToken: (token: string) =>
-    apiRequest<void>("/notifications/push-token", { method: "DELETE", body: { token } }),
-  pushStatus: () => apiRequest<{ activeTokens: number }>("/notifications/push-status"),
-  testPush: () => apiRequest<{ ok: boolean }>("/notifications/test-push", { method: "POST" })
+  markAllRead: () => apiRequest<void>("/notifications/read-all", { method: "POST" })
 };

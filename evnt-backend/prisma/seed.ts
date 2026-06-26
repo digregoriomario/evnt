@@ -239,7 +239,6 @@ async function clearDatabase() {
   await prisma.participation.deleteMany();
   await prisma.bookmark.deleteMany();
   await prisma.notification.deleteMany();
-  await prisma.pushToken.deleteMany();
   await prisma.event.deleteMany();
   await prisma.userInterest.deleteMany();
   await prisma.user.deleteMany();

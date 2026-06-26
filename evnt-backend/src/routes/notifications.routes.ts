@@ -3,16 +3,10 @@ import { z } from "zod";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../utils/http";
 import { authRequired } from "../middleware/auth";
-import { cleanupOldNotifications, notifyTestPush, runScheduledEventNotifications } from "../utils/notifications";
+import { cleanupOldNotifications, runScheduledEventNotifications } from "../utils/notifications";
 
 export const notificationsRouter = Router();
 notificationsRouter.use(authRequired);
-
-const pushTokenSchema = z.object({
-  deviceId: z.string().trim().max(120).optional(),
-  platform: z.string().trim().min(1).max(40),
-  token: z.string().trim().min(10).max(255)
-});
 
 const notificationIdSchema = z.coerce.number().int().positive();
 
@@ -45,59 +39,6 @@ notificationsRouter.get(
         createdAt: n.createdAt.toISOString()
       }))
     });
-  })
-);
-
-notificationsRouter.post(
-  "/push-token",
-  asyncHandler(async (req, res) => {
-    const body = pushTokenSchema.parse(req.body);
-    await prisma.pushToken.upsert({
-      where: { token: body.token },
-      create: {
-        deviceId: body.deviceId,
-        platform: body.platform,
-        token: body.token,
-        userId: req.userId!
-      },
-      update: {
-        deviceId: body.deviceId,
-        disabled: false,
-        platform: body.platform,
-        userId: req.userId!
-      }
-    });
-    res.json({ ok: true });
-  })
-);
-
-notificationsRouter.get(
-  "/push-status",
-  asyncHandler(async (req, res) => {
-    const activeTokens = await prisma.pushToken.count({
-      where: { disabled: false, userId: req.userId }
-    });
-    res.json({ activeTokens });
-  })
-);
-
-notificationsRouter.post(
-  "/test-push",
-  asyncHandler(async (req, res) => {
-    await notifyTestPush(req.userId!);
-    res.json({ ok: true });
-  })
-);
-
-notificationsRouter.delete(
-  "/push-token",
-  asyncHandler(async (req, res) => {
-    const body = pushTokenSchema.pick({ token: true }).parse(req.body);
-    await prisma.pushToken.updateMany({
-      where: { token: body.token, userId: req.userId },
-      data: { disabled: true }
-    });
-    res.json({ ok: true });
   })
 );
 

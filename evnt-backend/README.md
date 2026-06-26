@@ -273,10 +273,6 @@ POST   /notifications/:id/read
 POST   /notifications/read-all
 DELETE /notifications/:id
 DELETE /notifications
-POST   /notifications/push-token
-DELETE /notifications/push-token
-GET    /notifications/push-status
-POST   /notifications/test-push
 ```
 
 ## Autenticazione

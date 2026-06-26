@@ -4,10 +4,10 @@ import {
   KeyboardAvoidingView,
   Platform,
   Pressable,
-  ScrollView,
   StyleSheet,
   Text,
   TextInput,
+  useWindowDimensions,
   View
 } from "react-native";
 
@@ -97,6 +97,8 @@ function findMatchingCitySuggestion(city: string, suggestions: CitySuggestion[])
 }
 
 export function AuthScreen({ onComplete }: AuthScreenProps) {
+  const { height } = useWindowDimensions();
+  const isCompactHeight = height < 760;
   const [authView, setAuthView] = useState<"welcome" | "form">("welcome");
   const [mode, setMode] = useState<"signup" | "login">("signup");
   const [step, setStep] = useState(0);
@@ -126,10 +128,10 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
   const progress = `${step + 1}/3`;
 
   const helperText = useMemo(() => {
-    if (mode === "login") return "Inserisci email e password per accedere.";
-    if (step === 0) return "Usa una password di almeno 6 caratteri.";
-    if (step === 1) return "La citta serve per mostrarti eventi vicini anche senza geolocalizzazione.";
-    return `Seleziona almeno 3 interessi. Ora: ${interests.length}/3.`;
+    if (mode === "signup" && step === 2) {
+      return `Almeno 3 interessi (${interests.length}/3).`;
+    }
+    return "";
   }, [interests.length, mode, step]);
 
   useEffect(() => {
@@ -187,7 +189,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
               item.province.toLowerCase() === suggestion.province.toLowerCase()
           ) === index
       )
-      .slice(0, 8);
+      .slice(0, 4);
   }, [city, remoteCitySuggestions]);
 
   const toggleInterest = (category: Category) => {
@@ -492,20 +494,12 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
 
   return (
     <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboard}>
-      <ScrollView
-        automaticallyAdjustKeyboardInsets
-        contentContainerStyle={styles.container}
-        keyboardDismissMode={Platform.OS === "ios" ? "interactive" : "on-drag"}
-        keyboardShouldPersistTaps="handled"
-      >
+      <View style={[styles.container, isCompactHeight && styles.containerCompact]}>
         {authView === "welcome" ? (
           <View style={styles.welcome}>
-            <View style={styles.welcomeLogo}>
-              <Ionicons color={colors.surface} name="radio-outline" size={42} />
-            </View>
-            <Text style={styles.welcomeTitle}>Evnt</Text>
+            <Text style={[styles.welcomeTitle, isCompactHeight && styles.welcomeTitleCompact]}>Evnt</Text>
             <Text style={styles.welcomeDescription}>
-              Scopri eventi vicino a te, partecipa con persone affini e organizza uscite in pochi tocchi.
+              Eventi vicini, persone affini, uscite semplici.
             </Text>
 
             <View style={styles.welcomeActions}>
@@ -520,228 +514,217 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
             </View>
           </View>
         ) : (
-          <>
-            <View style={styles.brandRow}>
-              <View style={styles.logoMark}>
-                <Ionicons color={colors.surface} name="radio-outline" size={24} />
-              </View>
-              <Text style={styles.brandTitle}>
-                {mode === "signup" ? "Crea il tuo spazio in Evnt." : "Bentornato su Evnt."}
-              </Text>
+          <View style={[styles.formShell, isCompactHeight && styles.formShellCompact]}>
+            <View style={styles.formNav}>
+              <Pressable accessibilityRole="button" onPress={() => setAuthView("welcome")} style={styles.backLink}>
+                <Ionicons color={colors.ink} name="chevron-back" size={20} />
+              </Pressable>
+              <Pressable
+                accessibilityRole="button"
+                onPress={mode === "signup" ? openLogin : openSignup}
+                style={styles.switchLink}
+              >
+                <Text style={styles.switchLinkText}>{mode === "signup" ? "Accedi" : "Registrati"}</Text>
+              </Pressable>
             </View>
-
-            <View style={styles.panel}>
-              <View style={styles.formNav}>
-                <Pressable accessibilityRole="button" onPress={() => setAuthView("welcome")} style={styles.backLink}>
-                  <Ionicons color={colors.muted} name="chevron-back" size={18} />
-                  <Text style={styles.backLinkText}>Torna</Text>
-                </Pressable>
-                <Pressable
-                  accessibilityRole="button"
-                  onPress={mode === "signup" ? openLogin : openSignup}
-                  style={styles.switchLink}
-                >
-                  <Text style={styles.switchLinkText}>
-                    {mode === "signup" ? "Hai gia un account?" : "Nuovo su Evnt?"}
-                  </Text>
-                </Pressable>
-              </View>
-
+            <View style={[styles.panel, isCompactHeight && styles.panelCompact]}>
           {mode === "signup" ? (
             <>
-              <View style={styles.formHeader}>
-                <View>
-                  <Text style={styles.formKicker}>Step {progress}</Text>
-                  <Text style={styles.formTitle}>{stepTitle}</Text>
+              <View style={[styles.formBody, isCompactHeight && styles.formBodyCompact]}>
+                <View style={styles.formHeader}>
+                  <View>
+                    <Text style={styles.formKicker}>{progress}</Text>
+                    <Text style={[styles.formTitle, isCompactHeight && styles.formTitleCompact]}>{stepTitle}</Text>
+                  </View>
+                  <View style={styles.stepPills}>
+                    {[0, 1, 2].map((item) => (
+                      <View key={item} style={[styles.stepPill, item <= step && styles.stepPillActive]} />
+                    ))}
+                  </View>
                 </View>
-                <View style={styles.stepPills}>
-                  {[0, 1, 2].map((item) => (
-                    <View key={item} style={[styles.stepPill, item <= step && styles.stepPillActive]} />
-                  ))}
-                </View>
-              </View>
 
-                      <Text style={styles.helper}>{helperText}</Text>
-                      {formError.length > 0 && <Text style={styles.errorText}>{formError}</Text>}
+                {helperText.length > 0 && <Text style={styles.helper}>{helperText}</Text>}
+                {formError.length > 0 && <Text style={styles.errorText}>{formError}</Text>}
 
-              {step === 0 && (
-                <>
-                  <Field error={fieldErrors.email} label="Email">
-                    <View style={styles.emailInputWrap}>
-                      <TextInput
-                        autoCapitalize="none"
-                        autoComplete="email"
-                        autoCorrect={false}
-                        keyboardType="email-address"
-                        onChangeText={(value) => {
-                          setEmail(value);
-                          clearFieldError("email");
-                        }}
-                        placeholder="nome@email.it"
-                        placeholderTextColor={form.placeholder.color}
-                        style={styles.emailInput}
-                        textContentType="emailAddress"
-                        value={email}
-                      />
-                    </View>
-                  </Field>
-                  <Field error={fieldErrors.password} label="Password">
-                    <PasswordInput
-                      onChangeText={(value) => {
-                        setPassword(value);
-                        clearFieldError("password");
-                      }}
-                      placeholder="Minimo 6 caratteri"
-                      onToggleVisibility={() => setPasswordVisible((current) => !current)}
-                      value={password}
-                      visible={passwordVisible}
-                    />
-                  </Field>
-                  <Field error={fieldErrors.confirmPassword} label="Conferma password">
-                    <PasswordInput
-                      onChangeText={(value) => {
-                        setConfirmPassword(value);
-                        clearFieldError("confirmPassword");
-                      }}
-                      placeholder="Ripeti password"
-                      onToggleVisibility={() => setConfirmPasswordVisible((current) => !current)}
-                      value={confirmPassword}
-                      visible={confirmPasswordVisible}
-                    />
-                  </Field>
-                </>
-              )}
-
-              {step === 1 && (
-                <>
-                  <Field error={fieldErrors.name} label="Nome">
-                    <TextInput
-                      autoCapitalize="words"
-                      onChangeText={(value) => {
-                        setName(value);
-                        clearFieldError("name");
-                      }}
-                      placeholder="Il tuo nome"
-                      placeholderTextColor={form.placeholder.color}
-                      style={styles.input}
-                      value={name}
-                    />
-                  </Field>
-                  <Field error={fieldErrors.birthDate} label="Data di nascita">
-                    <DateTimePickerField
-                      maximumDate={today}
-                      mode="date"
-                      onChange={(value) => {
-                        setBirthDate(value);
-                        clearFieldError("birthDate");
-                      }}
-                      placeholder="Seleziona la data"
-                      value={birthDate}
-                    />
-                  </Field>
-                  <Field error={fieldErrors.city} label="Citta *">
-                    <View style={styles.autocompleteWrap}>
-                      <View style={styles.cityInputWrap}>
+                {step === 0 && (
+                  <>
+                    <Field error={fieldErrors.email} label="Email">
+                      <View style={styles.emailInputWrap}>
                         <TextInput
-                          autoCapitalize="words"
+                          autoCapitalize="none"
+                          autoComplete="email"
                           autoCorrect={false}
-                          onBlur={() => setTimeout(() => setCitySuggestionsOpen(false), 120)}
-                          onChangeText={handleCityChange}
-                          onFocus={() => setCitySuggestionsOpen(true)}
-                          placeholder="Es. Roma"
+                          keyboardType="email-address"
+                          onChangeText={(value) => {
+                            setEmail(value);
+                            clearFieldError("email");
+                          }}
+                          placeholder="nome@email.it"
                           placeholderTextColor={form.placeholder.color}
-                          style={styles.cityInput}
-                          value={city}
+                          style={styles.emailInput}
+                          textContentType="emailAddress"
+                          value={email}
                         />
-                        <Pressable
-                          accessibilityLabel="Usa la citta attuale"
-                          accessibilityRole="button"
-                          disabled={cityLocating}
-                          hitSlop={8}
-                          onPress={() => void useCurrentCity()}
-                          style={[styles.locateFieldButton, cityLocating && styles.locateFieldButtonDisabled]}
-                        >
-                          <Ionicons color={selectedCity ? colors.ink : colors.muted} name="locate-outline" size={19} />
-                        </Pressable>
                       </View>
+                    </Field>
+                    <Field error={fieldErrors.password} label="Password">
+                      <PasswordInput
+                        onChangeText={(value) => {
+                          setPassword(value);
+                          clearFieldError("password");
+                        }}
+                        placeholder="Minimo 6 caratteri"
+                        onToggleVisibility={() => setPasswordVisible((current) => !current)}
+                        value={password}
+                        visible={passwordVisible}
+                      />
+                    </Field>
+                    <Field error={fieldErrors.confirmPassword} label="Conferma password">
+                      <PasswordInput
+                        onChangeText={(value) => {
+                          setConfirmPassword(value);
+                          clearFieldError("confirmPassword");
+                        }}
+                        placeholder="Ripeti password"
+                        onToggleVisibility={() => setConfirmPasswordVisible((current) => !current)}
+                        value={confirmPassword}
+                        visible={confirmPasswordVisible}
+                      />
+                    </Field>
+                  </>
+                )}
 
-                      {citySuggestionsOpen && filteredCitySuggestions.length > 0 && (
-                        <View style={styles.suggestionList}>
-                          {filteredCitySuggestions.map((suggestion, index) => (
-                            <Pressable
-                              accessibilityRole="button"
-                              key={citySuggestionKey(suggestion, index)}
-                              onPress={() => chooseCity(suggestion)}
-                              style={styles.suggestionRow}
-                            >
+                {step === 1 && (
+                  <>
+                    <Field error={fieldErrors.name} label="Nome">
+                      <TextInput
+                        autoCapitalize="words"
+                        onChangeText={(value) => {
+                          setName(value);
+                          clearFieldError("name");
+                        }}
+                        placeholder="Il tuo nome"
+                        placeholderTextColor={form.placeholder.color}
+                        style={styles.input}
+                        value={name}
+                      />
+                    </Field>
+                    <Field error={fieldErrors.birthDate} label="Data di nascita">
+                      <DateTimePickerField
+                        maximumDate={today}
+                        mode="date"
+                        onChange={(value) => {
+                          setBirthDate(value);
+                          clearFieldError("birthDate");
+                        }}
+                        placeholder="Seleziona la data"
+                        value={birthDate}
+                      />
+                    </Field>
+                    <Field error={fieldErrors.city} label="Citta *">
+                      <View style={styles.autocompleteWrap}>
+                        <View style={styles.cityInputWrap}>
+                          <TextInput
+                            autoCapitalize="words"
+                            autoCorrect={false}
+                            onBlur={() => setTimeout(() => setCitySuggestionsOpen(false), 120)}
+                            onChangeText={handleCityChange}
+                            onFocus={() => setCitySuggestionsOpen(true)}
+                            placeholder="Es. Roma"
+                            placeholderTextColor={form.placeholder.color}
+                            style={styles.cityInput}
+                            value={city}
+                          />
+                          <Pressable
+                            accessibilityLabel="Usa la citta attuale"
+                            accessibilityRole="button"
+                            disabled={cityLocating}
+                            hitSlop={8}
+                            onPress={() => void useCurrentCity()}
+                            style={[styles.locateFieldButton, cityLocating && styles.locateFieldButtonDisabled]}
+                          >
+                            <Ionicons color={selectedCity ? colors.ink : colors.muted} name="locate-outline" size={19} />
+                          </Pressable>
+                        </View>
+
+                        {citySuggestionsOpen && filteredCitySuggestions.length > 0 && (
+                          <View style={styles.suggestionList}>
+                            {filteredCitySuggestions.map((suggestion, index) => (
+                              <Pressable
+                                accessibilityRole="button"
+                                key={citySuggestionKey(suggestion, index)}
+                                onPress={() => chooseCity(suggestion)}
+                                style={styles.suggestionRow}
+                              >
+                                <View style={styles.suggestionIcon}>
+                                  <Ionicons color={colors.ink} name="business-outline" size={17} />
+                                </View>
+                                <View style={styles.suggestionCopy}>
+                                  <Text style={styles.suggestionTitle}>{suggestion.name}</Text>
+                                  <Text style={styles.suggestionMeta}>{suggestion.province}</Text>
+                                </View>
+                              </Pressable>
+                            ))}
+                          </View>
+                        )}
+
+                        {citySuggestionsOpen && citySearching && filteredCitySuggestions.length === 0 && (
+                          <View style={styles.suggestionList}>
+                            <View style={styles.suggestionRow}>
                               <View style={styles.suggestionIcon}>
-                                <Ionicons color={colors.ink} name="business-outline" size={17} />
+                                <Ionicons color={colors.ink} name="globe-outline" size={17} />
                               </View>
                               <View style={styles.suggestionCopy}>
-                                <Text style={styles.suggestionTitle}>{suggestion.name}</Text>
-                                <Text style={styles.suggestionMeta}>{suggestion.province}</Text>
+                                <Text style={styles.suggestionTitle}>Cerco citta...</Text>
+                                <Text style={styles.suggestionMeta}>OpenStreetMap</Text>
                               </View>
-                            </Pressable>
-                          ))}
-                        </View>
-                      )}
-
-                      {citySuggestionsOpen && citySearching && filteredCitySuggestions.length === 0 && (
-                        <View style={styles.suggestionList}>
-                          <View style={styles.suggestionRow}>
-                            <View style={styles.suggestionIcon}>
-                              <Ionicons color={colors.ink} name="globe-outline" size={17} />
-                            </View>
-                            <View style={styles.suggestionCopy}>
-                              <Text style={styles.suggestionTitle}>Cerco citta...</Text>
-                              <Text style={styles.suggestionMeta}>OpenStreetMap</Text>
                             </View>
                           </View>
-                        </View>
-                      )}
-                    </View>
-                  </Field>
-                </>
-              )}
+                        )}
+                      </View>
+                    </Field>
+                  </>
+                )}
 
-              {step === 2 && (
-                <>
-                  <Field error={fieldErrors.avatar} label="Immagine profilo">
-                    <ProfileImagePicker
-                      onChange={(value) => {
-                        setAvatar(value);
-                        clearFieldError("avatar");
-                      }}
-                      value={avatar}
-                    />
-                  </Field>
-                  <Field error={fieldErrors.bio} label="Bio">
-                    <TextInput
-                      multiline
-                      onChangeText={(value) => {
-                        setBio(value);
-                        clearFieldError("bio");
-                      }}
-                      placeholder="Racconta in poche parole cosa ti piace fare."
-                      placeholderTextColor={form.placeholder.color}
-                      style={[styles.input, styles.textArea]}
-                      value={bio}
-                    />
-                  </Field>
-                  <FormField error={fieldErrors.interests} label="Interessi">
-                    <View style={styles.chips}>
-                      {categories.map((category) => (
-                        <CategoryChip
-                          category={category}
-                          key={category}
-                          onPress={() => toggleInterest(category)}
-                          selected={interests.includes(category)}
-                        />
-                      ))}
-                    </View>
-                  </FormField>
-                </>
-              )}
+                {step === 2 && (
+                  <>
+                    <Field error={fieldErrors.avatar} label="Immagine profilo">
+                      <ProfileImagePicker
+                        onChange={(value) => {
+                          setAvatar(value);
+                          clearFieldError("avatar");
+                        }}
+                        value={avatar}
+                      />
+                    </Field>
+                    <Field error={fieldErrors.bio} label="Bio">
+                      <TextInput
+                        multiline
+                        onChangeText={(value) => {
+                          setBio(value);
+                          clearFieldError("bio");
+                        }}
+                        placeholder="Racconta in poche parole cosa ti piace fare."
+                        placeholderTextColor={form.placeholder.color}
+                        style={[styles.input, styles.textArea]}
+                        value={bio}
+                      />
+                    </Field>
+                    <FormField error={fieldErrors.interests} label="Interessi">
+                      <View style={styles.chips}>
+                        {categories.map((category) => (
+                          <CategoryChip
+                            category={category}
+                            key={category}
+                            onPress={() => toggleInterest(category)}
+                            selected={interests.includes(category)}
+                          />
+                        ))}
+                      </View>
+                    </FormField>
+                  </>
+                )}
+              </View>
 
               <View style={styles.actionRow}>
                 <Pressable
@@ -752,7 +735,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
                     setFieldErrors({});
                     setStep((current) => Math.max(0, current - 1));
                   }}
-                  style={[styles.secondaryButton, step === 0 && styles.disabledSecondary]}
+                  style={[styles.secondaryButton, styles.actionButton, step === 0 && styles.disabledSecondary]}
                 >
                   <Ionicons color={step === 0 ? colors.muted : colors.ink} name="arrow-back" size={18} />
                   <Text style={[styles.secondaryText, step === 0 && styles.disabledSecondaryText]}>Indietro</Text>
@@ -761,7 +744,7 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
                   accessibilityRole="button"
                   disabled={submitting}
                   onPress={() => void goNext()}
-                  style={[styles.primaryButton, submitting && styles.disabledButton]}
+                  style={[styles.primaryButton, styles.actionButton, submitting && styles.disabledButton]}
                 >
                   <Text style={styles.primaryText}>
                     {submitting ? (step === 0 ? "Controllo..." : "Attendi...") : step === 2 ? "Completa" : "Avanti"}
@@ -772,45 +755,46 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
             </>
           ) : (
             <>
-              <View style={styles.formHeader}>
-                <View>
-                  <Text style={styles.formTitle}>Accedi</Text>
+              <View style={[styles.formBody, isCompactHeight && styles.formBodyCompact]}>
+                <View style={styles.formHeader}>
+                  <View>
+                    <Text style={[styles.formTitle, isCompactHeight && styles.formTitleCompact]}>Accedi</Text>
+                  </View>
                 </View>
-                <Ionicons color={colors.primary} name="lock-closed-outline" size={26} />
-              </View>
-              <Text style={styles.helper}>{helperText}</Text>
-              {formError.length > 0 && <Text style={styles.errorText}>{formError}</Text>}
-              <Field error={fieldErrors.email} label="Email">
-                <View style={styles.emailInputWrap}>
-                  <TextInput
-                    autoCapitalize="none"
-                    autoComplete="email"
-                    autoCorrect={false}
-                    keyboardType="email-address"
+                {helperText.length > 0 && <Text style={styles.helper}>{helperText}</Text>}
+                {formError.length > 0 && <Text style={styles.errorText}>{formError}</Text>}
+                <Field error={fieldErrors.email} label="Email">
+                  <View style={styles.emailInputWrap}>
+                    <TextInput
+                      autoCapitalize="none"
+                      autoComplete="email"
+                      autoCorrect={false}
+                      keyboardType="email-address"
+                      onChangeText={(value) => {
+                        setEmail(value);
+                        clearFieldError("email");
+                      }}
+                      placeholder="nome@email.it"
+                      placeholderTextColor={form.placeholder.color}
+                      style={styles.emailInput}
+                      textContentType="emailAddress"
+                      value={email}
+                    />
+                  </View>
+                </Field>
+                <Field error={fieldErrors.password} label="Password">
+                  <PasswordInput
                     onChangeText={(value) => {
-                      setEmail(value);
-                      clearFieldError("email");
+                      setPassword(value);
+                      clearFieldError("password");
                     }}
-                    placeholder="nome@email.it"
-                    placeholderTextColor={form.placeholder.color}
-                    style={styles.emailInput}
-                    textContentType="emailAddress"
-                    value={email}
+                    placeholder="La tua password"
+                    onToggleVisibility={() => setPasswordVisible((current) => !current)}
+                    value={password}
+                    visible={passwordVisible}
                   />
-                </View>
-              </Field>
-              <Field error={fieldErrors.password} label="Password">
-                <PasswordInput
-                  onChangeText={(value) => {
-                    setPassword(value);
-                    clearFieldError("password");
-                  }}
-                  placeholder="La tua password"
-                  onToggleVisibility={() => setPasswordVisible((current) => !current)}
-                  value={password}
-                  visible={passwordVisible}
-                />
-              </Field>
+                </Field>
+              </View>
               <Pressable
                 accessibilityRole="button"
                 disabled={submitting}
@@ -823,9 +807,9 @@ export function AuthScreen({ onComplete }: AuthScreenProps) {
             </>
           )}
             </View>
-          </>
+          </View>
         )}
-      </ScrollView>
+      </View>
     </KeyboardAvoidingView>
   );
 }
@@ -885,75 +869,79 @@ function PasswordInput({
 }
 
 const styles = StyleSheet.create({
-  keyboard: { flex: 1 },
+  keyboard: {
+    backgroundColor: colors.background,
+    flex: 1
+  },
   container: {
-    flexGrow: 1,
-    gap: spacing.lg,
+    alignItems: "stretch",
+    backgroundColor: colors.background,
+    flex: 1,
     justifyContent: "center",
-    padding: spacing.xl
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.xl,
+    width: "100%"
+  },
+  containerCompact: {
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md
   },
   welcome: {
-    alignItems: "center",
-    gap: spacing.lg,
+    alignItems: "stretch",
+    flex: 1,
+    gap: spacing.md,
     justifyContent: "center",
-    minHeight: 560
-  },
-  welcomeLogo: {
-    alignItems: "center",
-    backgroundColor: colors.primary,
-    borderRadius: 32,
-    height: 96,
-    justifyContent: "center",
-    width: 96,
-    ...shadow
+    width: "100%"
   },
   welcomeTitle: {
     color: colors.ink,
-    fontSize: 48,
+    fontSize: 50,
     fontWeight: "900",
-    lineHeight: 54
+    letterSpacing: 0,
+    lineHeight: 56,
+    textAlign: "left"
+  },
+  welcomeTitleCompact: {
+    fontSize: 44,
+    lineHeight: 48
   },
   welcomeDescription: {
     color: colors.muted,
-    fontSize: 17,
-    fontWeight: "600",
-    lineHeight: 25,
-    maxWidth: 330,
-    textAlign: "center"
+    fontSize: 15,
+    fontWeight: "700",
+    lineHeight: 21,
+    maxWidth: 300
   },
   welcomeActions: {
     alignSelf: "stretch",
-    gap: spacing.md,
-    marginTop: spacing.md
+    gap: spacing.sm,
+    marginTop: spacing.lg
   },
-  brandRow: {
-    alignItems: "center",
-    flexDirection: "row",
-    gap: spacing.md
-  },
-  logoMark: {
-    alignItems: "center",
-    backgroundColor: colors.primary,
-    borderRadius: radius.md,
-    height: 42,
-    justifyContent: "center",
-    width: 42
-  },
-  brandTitle: {
-    color: colors.ink,
+  formShell: {
+    alignSelf: "stretch",
     flex: 1,
-    fontSize: 27,
-    fontWeight: "900",
-    lineHeight: 32
+    gap: spacing.md,
+    justifyContent: "flex-start",
+    width: "100%"
+  },
+  formShellCompact: {
+    gap: spacing.sm
   },
   panel: {
-    backgroundColor: colors.surface,
-    borderColor: colors.line,
-    borderRadius: radius.md,
-    borderWidth: 1,
-    gap: spacing.md,
-    padding: spacing.lg,
-    ...shadow
+    flex: 1,
+    gap: spacing.lg,
+    justifyContent: "flex-start",
+    width: "100%"
+  },
+  panelCompact: {
+    gap: spacing.md
+  },
+  formBody: {
+    gap: spacing.sm,
+    width: "100%"
+  },
+  formBodyCompact: {
+    gap: spacing.xs
   },
   formNav: {
     alignItems: "center",
@@ -962,80 +950,84 @@ const styles = StyleSheet.create({
   },
   backLink: {
     alignItems: "center",
-    flexDirection: "row",
-    gap: 2,
-    paddingVertical: spacing.xs
-  },
-  backLinkText: {
-    color: colors.muted,
-    fontSize: 13,
-    fontWeight: "800"
+    backgroundColor: colors.surface,
+    borderColor: colors.line,
+    borderRadius: radius.md,
+    borderWidth: 1,
+    height: 38,
+    justifyContent: "center",
+    width: 38
   },
   switchLink: {
-    paddingVertical: spacing.xs
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.sm
   },
   switchLinkText: {
-    color: colors.teal,
-    fontSize: 13,
+    color: colors.ink,
+    fontSize: 14,
     fontWeight: "900"
   },
   formHeader: {
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "space-between"
+    gap: spacing.sm
   },
   formKicker: {
-    color: colors.teal,
-    fontSize: 12,
+    color: colors.muted,
+    fontSize: 11,
     fontWeight: "900",
     textTransform: "uppercase"
   },
   formTitle: {
     color: colors.ink,
-    fontSize: 22,
+    fontSize: 25,
     fontWeight: "900",
-    marginTop: 2
+    lineHeight: 30
+  },
+  formTitleCompact: {
+    fontSize: 22,
+    lineHeight: 26
   },
   stepPills: {
+    alignSelf: "center",
     flexDirection: "row",
     gap: spacing.xs
   },
   stepPill: {
-    backgroundColor: colors.surfaceMuted,
-    borderRadius: 5,
-    height: 10,
-    width: 28
+    backgroundColor: colors.line,
+    borderRadius: 4,
+    height: 5,
+    width: 32
   },
   stepPillActive: { backgroundColor: colors.primary },
   helper: {
     color: colors.muted,
-    fontSize: 13,
+    fontSize: 12,
     fontWeight: "700",
-    lineHeight: 18
+    lineHeight: 17
   },
   errorText: {
-    backgroundColor: colors.roseSoft,
-    borderColor: "#F3B7B7",
+    backgroundColor: colors.surface,
+    borderColor: colors.danger,
     borderRadius: radius.sm,
     borderWidth: 1,
     color: colors.danger,
     fontSize: 13,
     fontWeight: "800",
     lineHeight: 18,
-    padding: spacing.sm
+    paddingHorizontal: spacing.sm,
+    paddingVertical: spacing.xs
   },
   input: {
     backgroundColor: colors.surface,
     borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
-    minHeight: 56,
+    minHeight: 46,
     paddingHorizontal: spacing.md,
     ...form.fieldText
   },
   passwordInput: {
     flex: 1,
-    minHeight: 54,
+    minHeight: 44,
     ...form.fieldText
   },
   passwordInputWrap: {
@@ -1045,7 +1037,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: "row",
-    minHeight: 56,
+    minHeight: 46,
     paddingLeft: spacing.md,
     paddingRight: spacing.xs
   },
@@ -1053,9 +1045,9 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.surfaceMuted,
     borderRadius: radius.sm,
-    height: 36,
+    height: 34,
     justifyContent: "center",
-    width: 42
+    width: 40
   },
   emailInputWrap: {
     alignItems: "center",
@@ -1064,26 +1056,27 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     borderWidth: 1,
     flexDirection: "row",
-    minHeight: 56,
+    minHeight: 46,
     paddingLeft: spacing.md,
     paddingRight: spacing.md
   },
   emailInput: {
     flex: 1,
-    minHeight: 54,
+    minHeight: 44,
     ...form.fieldText
   },
   textArea: {
-    minHeight: 104,
-    paddingTop: spacing.md,
+    minHeight: 76,
+    paddingTop: spacing.sm,
     textAlignVertical: "top"
   },
   autocompleteWrap: {
-    gap: spacing.sm
+    position: "relative",
+    zIndex: 20
   },
   cityInput: {
     flex: 1,
-    minHeight: 54,
+    minHeight: 44,
     ...form.fieldText
   },
   cityInputWrap: {
@@ -1094,16 +1087,16 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     flexDirection: "row",
     gap: spacing.sm,
-    minHeight: 56,
+    minHeight: 46,
     paddingHorizontal: spacing.md
   },
   locateFieldButton: {
     alignItems: "center",
     backgroundColor: colors.surfaceMuted,
     borderRadius: 18,
-    height: 36,
+    height: 34,
     justifyContent: "center",
-    width: 36
+    width: 34
   },
   locateFieldButtonDisabled: {
     opacity: 0.55
@@ -1111,21 +1104,21 @@ const styles = StyleSheet.create({
   chips: {
     flexDirection: "row",
     flexWrap: "wrap",
-    gap: spacing.sm
+    gap: spacing.xs
   },
   actionRow: {
     flexDirection: "row",
-    gap: spacing.md
+    gap: spacing.sm
   },
   primaryButton: {
     alignItems: "center",
     backgroundColor: colors.primary,
     borderRadius: radius.md,
-    flex: 1,
     flexDirection: "row",
     gap: spacing.sm,
     justifyContent: "center",
-    minHeight: 50
+    minHeight: 48,
+    paddingHorizontal: spacing.md
   },
   outlineButton: {
     alignItems: "center",
@@ -1136,14 +1129,15 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     gap: spacing.sm,
     justifyContent: "center",
-    minHeight: 50
+    minHeight: 48,
+    paddingHorizontal: spacing.md
   },
   outlineText: {
     color: colors.primary,
     fontSize: 15,
     fontWeight: "900"
   },
-  disabledButton: { backgroundColor: "#B9B2A7" },
+  disabledButton: { backgroundColor: colors.muted },
   primaryText: {
     color: colors.surface,
     fontSize: 15,
@@ -1155,11 +1149,13 @@ const styles = StyleSheet.create({
     borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
-    flex: 1,
     flexDirection: "row",
     gap: spacing.sm,
     justifyContent: "center",
-    minHeight: 50
+    minHeight: 48
+  },
+  actionButton: {
+    flex: 1
   },
   disabledSecondary: { backgroundColor: colors.surfaceMuted },
   secondaryText: {
@@ -1175,16 +1171,21 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: colors.surfaceMuted,
     borderRadius: 18,
-    height: 36,
+    height: 30,
     justifyContent: "center",
-    width: 36
+    width: 30
   },
   suggestionList: {
     backgroundColor: colors.surface,
     borderColor: colors.line,
     borderRadius: radius.md,
     borderWidth: 1,
+    left: 0,
     overflow: "hidden",
+    position: "absolute",
+    right: 0,
+    top: 50,
+    zIndex: 30,
     ...shadow
   },
   suggestionMeta: {
@@ -1198,10 +1199,10 @@ const styles = StyleSheet.create({
     borderBottomColor: colors.line,
     borderBottomWidth: 1,
     flexDirection: "row",
-    gap: spacing.md,
-    minHeight: 58,
+    gap: spacing.sm,
+    minHeight: 46,
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm
+    paddingVertical: spacing.xs
   },
   suggestionTitle: {
     color: colors.ink,

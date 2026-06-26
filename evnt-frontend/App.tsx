@@ -17,12 +17,6 @@ import { ProfileScreen } from "./src/screens/ProfileScreen";
 import { useEventFilters } from "./src/presentation/hooks/useEventFilters";
 import { getFallbackCoordinates } from "./src/application/events/eventFiltering";
 import { distanceBetweenKm } from "./src/domain/geo/distance";
-import {
-  addPushNotificationResponseListener,
-  addPushTokenRefreshListener,
-  registerForPushNotificationsAsync,
-  type PushNotificationData
-} from "./src/pushNotifications";
 import { clearStoredSession, loadStoredSession, saveStoredSession } from "./src/session";
 import { colors, spacing } from "./src/theme";
 import { Coordinates, EvntEvent, LocationStatus, ScreenKey, UserProfile } from "./src/types";
@@ -112,7 +106,6 @@ function AppContent() {
     resetFilters: resetEventFilters,
     updateFilters: updateEventFilters
   } = useEventFilters();
-  const [pushToken, setPushToken] = useState<string | null>(null);
   const [online, setOnline] = useState(false);
   const [locationStatus, setLocationStatus] = useState<LocationStatus>("loading");
   const [userCoordinates, setUserCoordinates] = useState<Coordinates | null>(null);
@@ -121,7 +114,6 @@ function AppContent() {
   const [createEventDraft, setCreateEventDraft] = useState<CreateEventDraft | null>(null);
   const [toast, setToast] = useState<{ message: string; tone: ToastTone } | null>(null);
   const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pushRegistrationAttemptRef = useRef<string | null>(null);
 
   const selectedEvent = useMemo(
     () => events.find((event) => event.id === selectedEventId) ?? events[0],
@@ -161,6 +153,7 @@ function AppContent() {
 
   const activeMainScreen = mainScreens.includes(screen) ? screen : previousScreen;
   const showBottomNav = !sessionLoading && user !== null && mainScreens.includes(screen);
+  const useFullScreenShell = sessionLoading || user === null;
   const unreadChatNotifications = useMemo(
     () =>
       notifications.filter(
@@ -267,22 +260,6 @@ function AppContent() {
     [online]
   );
 
-  const openPushNotificationData = useCallback(
-    async (data: PushNotificationData) => {
-      if (typeof data.notificationId === "number") {
-        markNotificationRead(data.notificationId);
-      }
-      if (data.eventId) {
-        await openEventById(data.eventId);
-        return;
-      }
-      if (isChatNotificationType(data.type)) {
-        openInbox();
-      }
-    },
-    [markNotificationRead, openEventById, openInbox]
-  );
-
   const openNotification = async (notification: Notification) => {
     if (!notification.isRead) {
       markNotificationRead(notification.id);
@@ -327,21 +304,6 @@ function AppContent() {
       });
     }
   }, [online, refreshNotifications, showToast]);
-
-  const syncPushToken = useCallback(
-    async (token: string) => {
-      if (!user || !online) {
-        return;
-      }
-
-      setPushToken(token);
-      await api.registerPushToken({
-        platform: Platform.OS,
-        token
-      });
-    },
-    [online, user?.email]
-  );
 
   const isOwnEvent = useCallback(
     (event: EvntEvent) => user?.name.trim().toLowerCase() === event.organizer.trim().toLowerCase(),
@@ -802,17 +764,12 @@ function AppContent() {
   };
 
   const logout = () => {
-    if (pushToken) {
-      void api.unregisterPushToken(pushToken).catch(() => undefined);
-    }
     api.logout();
     void clearStoredSession();
     setOnline(false);
     setLocationStatus("loading");
     setUserCoordinates(null);
     setNotifications([]);
-    setPushToken(null);
-    pushRegistrationAttemptRef.current = null;
     setCreateEventDraft(null);
     setUser(null);
     setScreen("auth");
@@ -966,46 +923,6 @@ function AppContent() {
       subscription.remove();
     };
   }, [hydrateFromApi, online, refreshNotifications, user]);
-
-  useEffect(() => {
-    if (!user || !online) {
-      return;
-    }
-
-    let cancelled = false;
-
-    const registerPushToken = async () => {
-      const attemptKey = user.email;
-      if (pushRegistrationAttemptRef.current === attemptKey) {
-        return;
-      }
-      pushRegistrationAttemptRef.current = attemptKey;
-
-      const result = await registerForPushNotificationsAsync();
-      if (cancelled) {
-        return;
-      }
-
-      if (result.status === "registered") {
-        await syncPushToken(result.token).catch(() => undefined);
-      }
-    };
-
-    void registerPushToken();
-
-    const tokenSubscription = addPushTokenRefreshListener((token) => {
-      void syncPushToken(token).catch(() => undefined);
-    });
-    const responseSubscription = addPushNotificationResponseListener((data) => {
-      void openPushNotificationData(data);
-    });
-
-    return () => {
-      cancelled = true;
-      tokenSubscription.remove();
-      responseSubscription.remove();
-    };
-  }, [online, openPushNotificationData, syncPushToken, user?.email]);
 
   // Real auth against the backend: failed login/register keeps the user on auth.
   const handleAuthComplete = async (
@@ -1194,7 +1111,7 @@ function AppContent() {
       <SafeAreaProvider>
         <SafeAreaView edges={["top", "right", "bottom", "left"]} style={styles.safeArea}>
           <StatusBar style="dark" />
-          <View style={styles.appFrame}>
+          <View style={[styles.appFrame, !useFullScreenShell && styles.compactFrame]}>
             <View style={styles.content}>{renderScreen()}</View>
             {showBottomNav && (
               <BottomNav
@@ -1232,9 +1149,11 @@ const styles = StyleSheet.create({
     alignSelf: "center",
     backgroundColor: colors.background,
     flex: 1,
-    maxWidth: Platform.OS === "web" ? 480 : undefined,
     position: "relative",
     width: "100%"
+  },
+  compactFrame: {
+    maxWidth: Platform.OS === "web" ? 480 : undefined
   },
   content: {
     flex: 1
