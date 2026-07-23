@@ -34,6 +34,9 @@
   "overrides": {
     "chromium-edge-launcher": "^0.3.0",
     "glob": "^13.0.6",
+    "minimatch@10.2.5": {
+      "brace-expansion": "^5.0.8"
+    },
     "postcss": "^8.5.10",
     "test-exclude": "^8.0.0",
     "uuid": "^11.1.1"
