@@ -85,7 +85,6 @@ async function main() {
       });
     }
 
-    console.log(`${account.email} / ${demoPassword}`);
   }
 }
 

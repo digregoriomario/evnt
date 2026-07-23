@@ -776,7 +776,6 @@ function AppContent() {
     setPreviousScreen("home");
   };
 
-  // Loads live events from the backend and derives favorites/registrations.
   const hydrateFromApi = useCallback(async () => {
     try {
       const remote: ApiEvent[] = await api.listEvents();
@@ -924,7 +923,6 @@ function AppContent() {
     };
   }, [hydrateFromApi, online, refreshNotifications, user]);
 
-  // Real auth against the backend: failed login/register keeps the user on auth.
   const handleAuthComplete = async (
     profile: UserProfile,
     credentials?: { mode: "login" | "signup"; password: string }

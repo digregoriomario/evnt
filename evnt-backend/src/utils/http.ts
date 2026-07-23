@@ -1,4 +1,3 @@
-// Small helper to throw HTTP errors that the error middleware understands.
 export class HttpError extends Error {
   status: number;
   details?: unknown;
@@ -9,7 +8,6 @@ export class HttpError extends Error {
   }
 }
 
-// Wraps async route handlers so thrown errors reach the error middleware.
 import { NextFunction, Request, Response } from "express";
 export const asyncHandler =
   (fn: (req: Request, res: Response, next: NextFunction) => Promise<unknown>) =>

@@ -1,11 +1,10 @@
 import { Router } from "express";
 import { z } from "zod";
 import { prisma } from "../lib/prisma";
-import { asyncHandler, HttpError } from "../utils/http";
+import { asyncHandler } from "../utils/http";
 import { authRequired } from "../middleware/auth";
 import { cancelledEventTag, publicUser, serializeEvent } from "../utils/serialize";
 
-// Authenticated user-centric endpoints (profile, my events/bookmarks).
 export const meRouter = Router();
 meRouter.use(authRequired);
 

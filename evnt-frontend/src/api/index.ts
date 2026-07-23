@@ -133,7 +133,6 @@ function toQuery(filters?: EventFilters): string {
 }
 
 export const api = {
-  // ---- Auth ----
   async register(payload: RegisterPayload): Promise<AuthResponse> {
     const res = await apiRequest<AuthResponse>("/auth/register", {
       method: "POST",
@@ -168,7 +167,6 @@ export const api = {
     setAuthToken(null);
   },
 
-  // ---- Catalog ----
   async interests(): Promise<{ id: number; name: string }[]> {
     const { interests } = await apiRequest<{ interests: { id: number; name: string }[] }>(
       "/catalog/interests",
@@ -183,7 +181,6 @@ export const api = {
     return categories;
   },
 
-  // ---- Events ----
   async listEvents(filters?: EventFilters): Promise<ApiEvent[]> {
     const { events } = await apiRequest<{ events: ApiEvent[] }>(`/events${toQuery(filters)}`);
     return events;
@@ -222,7 +219,6 @@ export const api = {
     return apiRequest<{ favorite: boolean }>(`/events/${id}/bookmark`, { method: "DELETE" });
   },
 
-  // ---- Chat ----
   async messages(eventId: string): Promise<ChatMessage[]> {
     const { messages } = await apiRequest<{ messages: ChatMessage[] }>(`/events/${eventId}/messages`);
     return messages;
@@ -262,7 +258,6 @@ export const api = {
     return message;
   },
 
-  // ---- Me ----
   myEvents: () => apiRequest<{ events: ApiEvent[] }>("/me/events").then((r) => r.events),
   myBookmarks: () => apiRequest<{ events: ApiEvent[] }>("/me/bookmarks").then((r) => r.events),
   myParticipations: () =>
@@ -279,7 +274,6 @@ export const api = {
     );
   },
 
-  // ---- Notifications ----
   notifications: () =>
     apiRequest<{ notifications: Notification[] }>("/notifications").then((r) => r.notifications),
   deleteNotification: (id: number) => apiRequest<void>(`/notifications/${id}`, { method: "DELETE" }),

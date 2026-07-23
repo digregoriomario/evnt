@@ -415,10 +415,6 @@ async function main() {
   await createBookmarks(users, events);
 
   console.log("Seed completo. Vecchi dati rimossi e dati demo ricreati.");
-  console.log(`Password demo per tutti gli account: ${demoPassword}`);
-  for (const account of demoUsers) {
-    console.log(`${account.email} / ${demoPassword}`);
-  }
 }
 
 main()

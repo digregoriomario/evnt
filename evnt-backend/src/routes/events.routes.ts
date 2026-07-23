@@ -215,7 +215,6 @@ async function getEventChatForUser(eventId: number, userId: number) {
   return event;
 }
 
-// GET /events
 eventsRouter.get(
   "/",
   authOptional,
@@ -276,7 +275,6 @@ eventsRouter.get(
   })
 );
 
-// GET /events/:id
 eventsRouter.get(
   "/:id",
   authOptional,
@@ -319,7 +317,6 @@ const createSchema = z.object({
   subcategory: z.string().trim().min(1).max(50).optional()
 });
 
-// POST /events
 eventsRouter.post(
   "/",
   authRequired,
@@ -360,7 +357,6 @@ eventsRouter.post(
   })
 );
 
-// PUT /events/:id (creator only)
 eventsRouter.put(
   "/:id",
   authRequired,
@@ -413,7 +409,6 @@ eventsRouter.put(
   })
 );
 
-// DELETE /events/:id (creator only)
 eventsRouter.delete(
   "/:id",
   authRequired,
@@ -433,7 +428,6 @@ eventsRouter.delete(
   })
 );
 
-// POST /events/:id/join  &  DELETE /events/:id/join
 eventsRouter.post(
   "/:id/join",
   authRequired,
@@ -491,7 +485,6 @@ eventsRouter.delete(
   })
 );
 
-// POST /events/:id/bookmark  &  DELETE /events/:id/bookmark
 eventsRouter.post(
   "/:id/bookmark",
   authRequired,
@@ -520,7 +513,6 @@ eventsRouter.delete(
   })
 );
 
-// ---- Chat messages -------------------------------------------------------
 eventsRouter.get(
   "/:id/messages",
   authRequired,

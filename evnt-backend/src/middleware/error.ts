@@ -3,12 +3,10 @@ import { ZodError } from "zod";
 import { Prisma } from "@prisma/client";
 import { HttpError } from "../utils/http";
 
-// 404 for unmatched routes.
 export const notFound = (_req: Request, res: Response) => {
   res.status(404).json({ error: "Not found" });
 };
 
-// Centralized error handler.
 export const errorHandler = (
   err: unknown,
   _req: Request,

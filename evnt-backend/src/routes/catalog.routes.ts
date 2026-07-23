@@ -2,7 +2,6 @@ import { Router } from "express";
 import { prisma } from "../lib/prisma";
 import { asyncHandler } from "../utils/http";
 
-// Read-only catalog endpoints: interests + categories.
 export const catalogRouter = Router();
 
 catalogRouter.get(
